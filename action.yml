@@ -55,10 +55,6 @@ inputs:
       rounds narrow the spread that a change has to clear to be reported.
     required: false
     default: "7"
-  stage:
-    description: "Which compression stage the standing-state table shows."
-    required: false
-    default: "zstd:1"
   title:
     description: "Heading for the report."
     required: false
@@ -178,11 +174,10 @@ runs:
       working-directory: ${{ github.action_path }}
       env:
         TITLE: ${{ inputs.title }}
-        STAGE: ${{ inputs.stage }}
         HAS_BASE: ${{ inputs.baseline-path != '' }}
       run: |
         set -euo pipefail
-        args=("$GITHUB_WORKSPACE/results.json" --title "$TITLE" --stage "$STAGE")
+        args=("$GITHUB_WORKSPACE/results.json" --title "$TITLE")
         note=""
         if [ "$HAS_BASE" = "true" ] && [ -f "$GITHUB_WORKSPACE/base-results.json" ]; then
           args+=(--baseline "$GITHUB_WORKSPACE/base-results.json")
