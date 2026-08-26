@@ -155,6 +155,18 @@ def samples() -> list[tuple[str, str, bytes]]:
     return out
 
 
+def as_bytes() -> list[tuple[str, bytes]]:
+    """Every sample as (label, bytes), without the category.
+
+    Base85N's `bench/size_bench.py` reads the short samples this way. It kept
+    its own copy of this file until the corpus was consolidated here; keeping
+    the shape it expects is cheaper than changing a report generator that
+    works, and the category it drops is in `samples()` for anything that wants
+    it.
+    """
+    return [(label, data) for label, _cat, data in samples()]
+
+
 def slug(label: str) -> str:
     keep = [c if c.isalnum() else "-" for c in label.lower()]
     name = "".join(keep)
