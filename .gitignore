@@ -1,0 +1,4 @@
+corpus/data/
+runner-rust/target/
+results.json
+codecs/

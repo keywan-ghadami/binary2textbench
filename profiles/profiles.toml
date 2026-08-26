@@ -1,0 +1,94 @@
+# Weighting profiles: what "best" means, written down.
+#
+# A single overall score is a claim about whose data is being encoded, and there
+# is no answer to that which is right for everyone. So the report does not pick
+# one. These profiles are starting points -- each says "suppose your traffic
+# looks mostly like this" -- and the site lets a reader move every weight
+# afterwards, because the reader knows their traffic and this file does not.
+#
+# Weights are per corpus category, relative within a profile: only their ratios
+# matter, so 3 and 1 says the same thing as 30 and 10. A category left out
+# weighs nothing. Every category present in the corpus and absent here is
+# reported, just not counted.
+#
+# The categories come from corpus/data/manifest.json. Adding a profile needs no
+# code change: add a table here and rerun.
+
+[profile.balanced]
+label = "Balanced"
+note = "Everything the corpus holds, counted evenly. The default, and the one to distrust: no real system's traffic looks like this."
+[profile.balanced.weights]
+binary = 1
+archive = 1
+json = 1
+code = 1
+spec = 1
+prose = 1
+image = 1
+mixed = 1
+text_clean = 1
+text_sparse = 1
+text_moderate = 1
+text_dense = 1
+session_ids = 1
+encrypted = 1
+precompressed = 1
+random = 1
+hex = 1
+dec = 1
+b64 = 1
+text = 1
+binary_short = 1
+
+[profile.sparse_problem_chars]
+label = "A few problematic characters"
+note = "Text that is almost all plain ASCII with the occasional byte that breaks it -- a log line with a stray control character, a field with one byte of raw UTF-8 gone wrong. The case where escaping in place might still have been cheaper, and the report should be able to say whether it was."
+[profile.sparse_problem_chars.weights]
+text_sparse = 6
+text_clean = 2
+text = 2
+prose = 1
+spec = 1
+json = 1
+
+[profile.dense_problem_chars]
+label = "Many problematic characters"
+note = "Text so peppered with untransportable bytes that escaping it in place would be worse than encoding it outright. Where a binary-to-text encoding stops being a fallback and becomes the obvious choice."
+[profile.dense_problem_chars.weights]
+text_dense = 6
+text_moderate = 3
+text_sparse = 1
+
+[profile.mixed_content]
+label = "Mixed content"
+note = "One envelope carrying several kinds of thing at once: structured text, source, a binary attachment. What a real message tends to hold, and the case where an encoding cannot specialise its way out."
+[profile.mixed_content.weights]
+mixed = 4
+json = 2
+code = 2
+prose = 1
+spec = 1
+binary = 2
+archive = 1
+image = 1
+
+[profile.binary]
+label = "Binary data"
+note = "Container formats, executables, fonts, images, archives. No text structure to exploit, but plenty of internal redundancy for a compressor to find."
+[profile.binary.weights]
+binary = 4
+archive = 3
+image = 2
+mixed = 1
+
+[profile.incompressible]
+label = "Compressed or random data"
+note = "Session identifiers, ciphertext, already-compressed blobs, and pure noise. A compression stage in front of the encoder earns nothing here, so the encoding is on its own -- and this is exactly the traffic that reaches for one."
+[profile.incompressible.weights]
+session_ids = 3
+encrypted = 3
+precompressed = 3
+random = 1
+image = 1
+b64 = 1
+hex = 1
