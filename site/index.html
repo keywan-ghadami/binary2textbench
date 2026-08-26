@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>binary2textbench</title>
+<style>
+/* Light is the base; the dark values are chosen for the dark surface rather
+   than flipped, and are declared under both the OS setting and an explicit
+   theme stamp so a toggle wins in either direction. */
+:root {
+  color-scheme: light;
+  --plane:      #f9f9f7;
+  --surface:    #fcfcfb;
+  --ink:        #0b0b0b;
+  --ink-2:      #52514e;
+  --muted:      #898781;
+  --grid:       #e1e0d9;
+  --axis:       #c3c2b7;
+  --bar:        #2a78d6;
+  --bar-soft:   #9ec5f4;
+  --baseline:   #52514e;
+  --good:       #0ca30c;
+  --critical:   #d03b3b;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plane:    #0d0d0d;
+    --surface:  #1a1a19;
+    --ink:      #ffffff;
+    --ink-2:    #c3c2b7;
+    --muted:    #898781;
+    --grid:     #2c2c2a;
+    --axis:     #383835;
+    --bar:      #3987e5;
+    --bar-soft: #184f95;
+    --baseline: #c3c2b7;
+    --good:     #0ca30c;
+    --critical: #d03b3b;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane:    #0d0d0d;
+  --surface:  #1a1a19;
+  --ink:      #ffffff;
+  --ink-2:    #c3c2b7;
+  --muted:    #898781;
+  --grid:     #2c2c2a;
+  --axis:     #383835;
+  --bar:      #3987e5;
+  --bar-soft: #184f95;
+  --baseline: #c3c2b7;
+  --good:     #0ca30c;
+  --critical: #d03b3b;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 20px 80px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 1.05rem; margin: 0 0 2px; letter-spacing: -0.005em; }
+h3 { font-size: 0.9rem; margin: 0 0 10px; color: var(--ink-2); font-weight: 600; }
+p  { margin: 0 0 12px; color: var(--ink-2); }
+.lede { max-width: 62ch; }
+.sub { color: var(--muted); font-size: 0.82rem; margin: 0 0 20px; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin: 0 0 18px;
+}
+
+/* --- controls: one row above the charts --- */
+.controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+.control { display: flex; flex-direction: column; gap: 5px; }
+.control > label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+select, button {
+  font: inherit; font-size: 0.88rem;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--axis); border-radius: 6px;
+  padding: 6px 10px; min-height: 34px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--ink-2); }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-left: 1px solid var(--axis); }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--bar); color: #fff; }
+.note { font-size: 0.8rem; color: var(--muted); margin: 10px 0 0; max-width: 68ch; }
+
+/* --- weights --- */
+details.weights { margin-top: 16px; border-top: 1px solid var(--grid); padding-top: 14px; }
+details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-2); font-weight: 600; }
+.wgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 20px; margin-top: 14px; }
+.wrow { display: grid; grid-template-columns: 1fr 46px; align-items: center; gap: 8px; }
+.wrow label { font-size: 0.8rem; color: var(--ink-2); }
+.wrow .val { font-size: 0.78rem; color: var(--muted); text-align: right; }
+.wrow input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--bar); }
+
+/* --- charts --- */
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; }
+.chart-scroll { overflow-x: auto; }
+svg { display: block; max-width: 100%; }
+.bar-label { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.cat-label { fill: var(--ink-2); font-size: 12.5px; }
+.tick { fill: var(--muted); font-size: 11px; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.axisline { stroke: var(--axis); stroke-width: 1; }
+.baseline-mark { stroke: var(--baseline); stroke-width: 2; stroke-dasharray: 3 3; }
+.err { stroke: var(--ink-2); stroke-width: 2; opacity: 0.75; }
+.hit { fill: transparent; cursor: default; }
+
+/* --- table --- */
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+tbody tr:hover { background: color-mix(in srgb, var(--bar) 7%, transparent); }
+td.num { font-variant-numeric: tabular-nums; }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: baseline; }
+.tie { color: var(--muted); font-size: 0.76rem; margin-left: 6px; }
+.best { color: var(--good); font-weight: 600; }
+.worse { color: var(--critical); }
+
+/* --- tooltip --- */
+#tip {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity .08s;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--axis); border-radius: 7px;
+  padding: 8px 11px; font-size: 0.8rem; line-height: 1.45;
+  box-shadow: 0 6px 22px rgba(0,0,0,.18); max-width: 300px; z-index: 20;
+}
+#tip b { font-weight: 600; }
+#tip .k { color: var(--muted); }
+
+.meta { font-size: 0.78rem; color: var(--muted); }
+.meta dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; color: var(--ink-2); }
+#error { color: var(--critical); }
+@media (max-width: 640px) { .charts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>binary2textbench</h1>
+<p class="lede">Six binary-to-text encodings, one corpus, one process. Every speed
+figure is divided by a Base64 figure measured beside it; sizes are exact.
+<strong>Weight the corpus the way your traffic actually looks</strong> — the
+ranking is a claim about whose data is being encoded, and only you know that.</p>
+<p class="sub" id="provenance">loading…</p>
+
+<div id="error"></div>
+
+<div class="card" id="controls-card">
+  <div class="controls">
+    <div class="control">
+      <label for="profile">Profile</label>
+      <select id="profile"></select>
+    </div>
+    <div class="control">
+      <label for="stage">Compression</label>
+      <select id="stage"></select>
+    </div>
+    <div class="control">
+      <label>Size measured</label>
+      <div class="seg" role="group" aria-label="Size measured">
+        <button type="button" data-size="json" aria-pressed="true">Inside JSON</button>
+        <button type="button" data-size="raw" aria-pressed="false">Raw</button>
+      </div>
+    </div>
+    <div class="control">
+      <label>Direction</label>
+      <div class="seg" role="group" aria-label="Direction">
+        <button type="button" data-dir="encode" aria-pressed="true">Encode</button>
+        <button type="button" data-dir="decode" aria-pressed="false">Decode</button>
+      </div>
+    </div>
+    <div class="control">
+      <label>Time counted</label>
+      <div class="seg" role="group" aria-label="Time counted">
+        <button type="button" data-total="1" aria-pressed="true">With compression</button>
+        <button type="button" data-total="0" aria-pressed="false">Codec only</button>
+      </div>
+    </div>
+    <div class="control">
+      <label>&nbsp;</label>
+      <button type="button" id="theme">Theme</button>
+    </div>
+  </div>
+
+  <p class="note" id="profile-note"></p>
+
+  <details class="weights">
+    <summary>Weights per corpus category — move them</summary>
+    <p class="note">Only the ratios matter. A category at zero is still measured,
+    just not counted.</p>
+    <div class="wgrid" id="weights"></div>
+    <p><button type="button" id="reset-weights">Reset to profile</button></p>
+  </details>
+</div>
+
+<div class="charts">
+  <div class="card">
+    <h2>Size</h2>
+    <h3 id="size-sub">Encoded characters per input byte, inside a JSON string</h3>
+    <div class="chart-scroll"><svg id="chart-size" role="img"></svg></div>
+    <p class="note">Deterministic: identical on every run, so a difference here is
+    a real difference. The dashed line is Base64.</p>
+  </div>
+  <div class="card">
+    <h2>Speed</h2>
+    <h3 id="speed-sub">Time relative to Base64 — lower is faster</h3>
+    <div class="chart-scroll"><svg id="chart-speed" role="img"></svg></div>
+    <p class="note">The whisker is the interquartile range across rounds: how much
+    of the bar is the machine rather than the code. Bars whose whiskers overlap
+    are marked <em>tied</em> in the table below.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Every number</h2>
+  <h3>Weighted by the profile above. The table is the accessible view of both charts.</h3>
+  <div class="chart-scroll"><table id="table"></table></div>
+</div>
+
+<div class="card">
+  <h2>By category</h2>
+  <h3 id="cat-sub">Where each encoding wins and loses, before weighting</h3>
+  <div class="chart-scroll"><table id="cattable"></table></div>
+</div>
+
+<div class="card meta">
+  <h2>Provenance</h2>
+  <h3>What produced these numbers</h3>
+  <dl id="meta"></dl>
+</div>
+
+</div>
+<div id="tip" role="tooltip" aria-hidden="true"></div>
+
+<script>
+"use strict";
+
+// Colour follows the entity, never its rank: a codec keeps its hue when the
+// sort order changes or a filter drops one of its neighbours.
+const HUE = {
+  "base64":         "var(--s1)",
+  "base91-classic": "var(--s2)",
+  "ascii85":        "var(--s3)",
+  "base85n":        "var(--s4)",
+  "base94max":      "var(--s5)",
+  "base91z":        "var(--s6)",
+  "base91z·auto":   "var(--s7)",
+};
+const ORDER = Object.keys(HUE);
+
+const state = {
+  data: null,
+  profile: null,
+  stage: "zstd:1",
+  size: "json",
+  dir: "encode",
+  total: true,
+  weights: {},
+  categories: [],
+};
+
+const $ = (s) => document.querySelector(s);
+const fmt = (n, d = 4) => Number(n).toFixed(d);
+
+// --- load ---------------------------------------------------------------
+
+async function load() {
+  // Beside the page is where CI puts it; one level up is where a local run
+  // leaves it. Try both rather than making somebody move a file.
+  let text, err;
+  for (const url of ["results.json", "../results.json"]) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.status + " " + res.statusText);
+      text = await res.text();
+      break;
+    } catch (e) { err = e; }
+  }
+  if (text === undefined) {
+    const e = err;
+    $("#error").innerHTML =
+      "<p><strong>No results.json beside this page.</strong> Generate one with " +
+      "<code>cd runner-rust &amp;&amp; cargo run --release</code>, or download the " +
+      "artifact from a CI run and put it next to this file. " +
+      "(Opening over <code>file://</code> may also need a local server: " +
+      "<code>python3 -m http.server</code>.)</p><p class='sub'>" + e + "</p>";
+    return;
+  }
+  state.data = JSON.parse(text);
+  init();
+}
+
+// --- shaping ------------------------------------------------------------
+
+/** Rows are (codec, stage) pairs. Base91z's own compression decision is a row of
+ *  its own rather than a stage, because it is a different thing being offered:
+ *  the codec as it ships, against the others with a compressor bolted in front. */
+function rowKey(m) {
+  return m.stage === "auto" ? "base91z·auto" : m.codec;
+}
+
+function categoryOf(d) {
+  const map = {};
+  for (const s of d.corpus.samples) map[s.name] = s.category;
+  return map;
+}
+
+function init() {
+  const d = state.data;
+  const cat = categoryOf(d);
+
+  // Categories in corpus order, so related ones stay together.
+  const seen = new Set();
+  state.categories = [];
+  for (const s of d.corpus.samples) {
+    if (!seen.has(s.category)) { seen.add(s.category); state.categories.push(s.category); }
+  }
+
+  // Index: [stage] -> one entry per sample, holding every codec's row for it
+  // and the compression cost they share. Keyed this way rather than per codec
+  // because a ratio needs Base64's figures for the *same* sample and stage, and
+  // getting that denominator right is the whole point of the exercise.
+  const compress = {};
+  for (const c of d.compression) compress[c.sample + "|" + c.stage] = c;
+
+  state.index = {};
+  const entries = {};
+  for (const m of d.measurements) {
+    const key = rowKey(m);
+    // A native row -- a codec compressing on its own behalf -- is shown beside
+    // every stage, because the question it answers is "against a caller who
+    // bolted a compressor on, how does it do".
+    const stages = m.stage === "auto" ? d.stages.filter((x) => x !== "auto") : [m.stage];
+    for (const stage of stages) {
+      const id = stage + "|" + m.sample;
+      const e = (entries[id] ??= {
+        sample: m.sample,
+        category: cat[m.sample],
+        input: m.input_bytes,
+        comp: compress[m.sample + "|" + stage] || null,
+        by: {},
+      });
+      e.by[key] = m;
+      (state.index[stage] ??= []).push(e);
+    }
+  }
+  // One entry per (stage, sample), not one per measurement.
+  for (const stage of Object.keys(state.index)) {
+    state.index[stage] = [...new Set(state.index[stage])];
+  }
+
+  buildProfiles();
+  buildStages();
+  wire();
+  render();
+}
+
+function buildProfiles() {
+  const profiles = (state.data.profiles && state.data.profiles.profile) || {};
+  const sel = $("#profile");
+  sel.innerHTML = "";
+  const names = Object.keys(profiles);
+  for (const name of names) {
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = profiles[name].label || name;
+    sel.append(o);
+  }
+  if (!names.length) {
+    const o = document.createElement("option");
+    o.value = "__even"; o.textContent = "Everything, evenly";
+    sel.append(o);
+  }
+  state.profile = sel.value;
+  applyProfile();
+  buildWeightControls();
+}
+
+function applyProfile() {
+  const profiles = (state.data.profiles && state.data.profiles.profile) || {};
+  const p = profiles[state.profile];
+  state.weights = {};
+  for (const c of state.categories) {
+    state.weights[c] = p && p.weights ? Number(p.weights[c] || 0) : 1;
+  }
+  $("#profile-note").textContent = p && p.note ? p.note : "";
+}
+
+function buildWeightControls() {
+  const box = $("#weights");
+  box.innerHTML = "";
+  for (const c of state.categories) {
+    const row = document.createElement("div");
+    row.className = "wrow";
+    row.innerHTML =
+      `<label for="w-${c}">${c}</label>` +
+      `<span class="val" id="wv-${c}">${state.weights[c]}</span>` +
+      `<input type="range" id="w-${c}" min="0" max="10" step="0.5" value="${state.weights[c]}">`;
+    row.querySelector("input").addEventListener("input", (e) => {
+      state.weights[c] = Number(e.target.value);
+      $("#wv-" + c).textContent = state.weights[c];
+      render();
+    });
+    box.append(row);
+  }
+}
+
+function syncWeightControls() {
+  for (const c of state.categories) {
+    const el = $("#w-" + c);
+    if (el) { el.value = state.weights[c]; $("#wv-" + c).textContent = state.weights[c]; }
+  }
+}
+
+function buildStages() {
+  const sel = $("#stage");
+  sel.innerHTML = "";
+  for (const s of state.data.stages) {
+    if (s === "auto") continue;   // shown as its own row, not as a stage
+    const o = document.createElement("option");
+    o.value = s;
+    o.textContent = s === "none" ? "none" : s.replace("zstd:", "zstd ");
+    sel.append(o);
+  }
+  if (!state.data.stages.includes(state.stage)) state.stage = state.data.stages[0];
+  sel.value = state.stage;
+}
+
+// --- aggregation --------------------------------------------------------
+
+/** The time one row costs, and the Base64 time it is measured against.
+ *
+ *  Which of the two available figures is used depends on whether their
+ *  denominators match:
+ *
+ *  * A plain codec at a stage, timed without the compression stage, already has
+ *    a per-round ratio against Base64 measured beside it. That is the stable
+ *    figure and it is used as it stands.
+ *  * Once the compression stage is counted, or for a native row -- Base91z
+ *    deciding its own compression, whose measured ratio is against Base64 over
+ *    the *uncompressed* input -- the ratio has to be rebuilt from absolute
+ *    times so that both sides describe the same pipeline. Less stable, and
+ *    honest, which is the right way round.
+ */
+function timeOf(entry, key) {
+  const m = entry.by[key];
+  const base = entry.by["base64"];
+  if (!m || !base) return null;
+  const native = m.stage === "auto";
+
+  const pick = (x) => (state.dir === "encode" ? x.encode : x.decode);
+  const pickRel = (x) => (state.dir === "encode" ? x.encode_rel : x.decode_rel);
+  const compNs = entry.comp
+    ? (state.dir === "encode" ? entry.comp.compress.ns : entry.comp.decompress.ns)
+    : 0;
+
+  if (!native && !state.total) {
+    return { rel: pickRel(m).ns, iqr: pickRel(m).iqr_ns };
+  }
+  // A native row carries its compression inside itself; every other row has to
+  // have it added.
+  const mine = pick(m).ns + (native ? 0 : state.total ? compNs : 0);
+  const theirs = pick(base).ns + (state.total ? compNs : 0);
+  if (!(theirs > 0)) return null;
+  // The spread scales with how much of the total is still the codec: the
+  // compression stage is measured separately and steadier.
+  const share = pick(m).ns / (mine || 1);
+  return { rel: mine / theirs, iqr: pickRel(m).iqr_ns * share };
+}
+
+/** One row of the report: the weighted figures for one codec at one stage.
+ *
+ *  Size is a ratio of totals per category, then a weighted mean of those -- not
+ *  a mean of per-file ratios, which would let a 40-byte sample outvote a
+ *  megabyte one inside its own category.
+ *
+ *  Speed is weighted within a category by input bytes and across categories by
+ *  the profile. */
+function aggregate(key) {
+  const entries = state.index[state.stage];
+  if (!entries) return null;
+
+  const perCat = {};
+  for (const e of entries) {
+    const m = e.by[key];
+    if (!m) continue;
+    const t = timeOf(e, key);
+    if (!t) continue;
+    const c = (perCat[e.category] ??= {
+      input: 0, json: 0, raw: 0, escapes: 0, relW: 0, iqrW: 0,
+    });
+    c.input += m.input_bytes;
+    c.json += m.json_bytes;
+    c.raw += m.encoded_bytes;
+    c.escapes += m.escapes;
+    c.relW += t.rel * m.input_bytes;
+    c.iqrW += t.iqr * m.input_bytes;
+  }
+
+  let wSum = 0, sizeAcc = 0, relAcc = 0, iqrAcc = 0;
+  const out = {};
+  for (const [cat, c] of Object.entries(perCat)) {
+    if (!c.input) continue;
+    const size = (state.size === "json" ? c.json : c.raw) / c.input;
+    const rel = c.relW / c.input;
+    out[cat] = { size, rel, escapes: c.escapes, input: c.input };
+    const w = state.weights[cat] || 0;
+    if (w <= 0) continue;
+    wSum += w;
+    sizeAcc += w * size;
+    relAcc += w * rel;
+    iqrAcc += w * (c.iqrW / c.input);
+  }
+  if (!wSum) return null;
+  return { key, size: sizeAcc / wSum, rel: relAcc / wSum, iqr: iqrAcc / wSum, perCat: out };
+}
+
+function rows() {
+  return ORDER.map(aggregate).filter(Boolean);
+}
+
+// --- charts -------------------------------------------------------------
+
+const PAD = { l: 118, r: 74, t: 8, b: 30 };
+const BAR = 22, GAP = 12;
+
+function barChart(svgId, data, opts) {
+  const svg = document.getElementById(svgId);
+  const w = Math.max(svg.parentElement.clientWidth || 460, 380);
+  const h = PAD.t + PAD.b + data.length * (BAR + GAP);
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("aria-label", opts.title);
+  const iw = w - PAD.l - PAD.r;
+  const max = Math.max(...data.map((d) => d.value + (d.err || 0)), opts.marker || 0) * 1.08;
+  const x = (v) => PAD.l + (v / max) * iw;
+
+  const parts = [];
+  // Recessive grid: four ticks, hairline, behind everything.
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const v = (max / ticks) * i;
+    parts.push(`<line class="gridline" x1="${x(v)}" y1="${PAD.t}" x2="${x(v)}" y2="${h - PAD.b}"/>`);
+    parts.push(`<text class="tick" x="${x(v)}" y="${h - PAD.b + 14}" text-anchor="middle">${opts.tick(v)}</text>`);
+  }
+  if (opts.marker) {
+    parts.push(`<line class="baseline-mark" x1="${x(opts.marker)}" y1="${PAD.t}" x2="${x(opts.marker)}" y2="${h - PAD.b}"/>`);
+  }
+
+  data.forEach((d, i) => {
+    const y = PAD.t + i * (BAR + GAP);
+    const len = Math.max(x(d.value) - PAD.l, 2);
+    // 4px rounded data-end anchored to the baseline: rounded on the far side
+    // only, achieved by drawing past the axis and clipping with the axis line.
+    parts.push(
+      `<rect class="hit" x="0" y="${y - GAP / 2}" width="${w}" height="${BAR + GAP}"
+         data-i="${i}"/>`,
+      `<rect x="${PAD.l}" y="${y}" width="${len}" height="${BAR}" rx="4" ry="4"
+         fill="${d.color}"/>`,
+      `<rect x="${PAD.l}" y="${y}" width="${Math.min(4, len)}" height="${BAR}"
+         fill="${d.color}"/>`
+    );
+    if (d.err) {
+      const cy = y + BAR / 2;
+      parts.push(
+        `<line class="err" x1="${x(Math.max(d.value - d.err / 2, 0))}" y1="${cy}"
+           x2="${x(d.value + d.err / 2)}" y2="${cy}"/>`
+      );
+    }
+    parts.push(
+      `<text class="cat-label" x="${PAD.l - 10}" y="${y + BAR / 2 + 4}" text-anchor="end">${d.label}</text>`,
+      // Direct labels on every bar: the relief the contrast check asks for,
+      // and it removes the need to read a value off an axis.
+      `<text class="bar-label" x="${x(d.value + (d.err || 0) / 2) + 11}" y="${y + BAR / 2 + 4}">${d.text}</text>`
+    );
+  });
+
+  parts.push(`<line class="axisline" x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${h - PAD.b}"/>`);
+  svg.innerHTML = parts.join("");
+
+  svg.querySelectorAll(".hit").forEach((el) => {
+    el.addEventListener("pointerenter", (e) => showTip(e, data[+el.dataset.i].tip));
+    el.addEventListener("pointermove", (e) => moveTip(e));
+    el.addEventListener("pointerleave", hideTip);
+  });
+}
+
+function showTip(e, html) {
+  const t = $("#tip");
+  t.innerHTML = html;
+  t.style.opacity = "1";
+  t.setAttribute("aria-hidden", "false");
+  moveTip(e);
+}
+function moveTip(e) {
+  const t = $("#tip");
+  const pad = 14;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  const r = t.getBoundingClientRect();
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - pad;
+  if (y + r.height > innerHeight - 8) y = e.clientY - r.height - pad;
+  t.style.left = x + "px";
+  t.style.top = y + "px";
+}
+function hideTip() {
+  const t = $("#tip");
+  t.style.opacity = "0";
+  t.setAttribute("aria-hidden", "true");
+}
+
+// --- render -------------------------------------------------------------
+
+function label(key) { return key.replace("·", " "); }
+
+function render() {
+  const rs = rows();
+  if (!rs.length) {
+    $("#error").innerHTML = "<p>Every category is weighted zero — nothing to compare.</p>";
+    return;
+  }
+  $("#error").innerHTML = "";
+
+  const base = rs.find((r) => r.key === "base64");
+  const sizeSorted = [...rs].sort((a, b) => a.size - b.size);
+  const speedSorted = [...rs].sort((a, b) => a.rel - b.rel);
+
+  $("#size-sub").textContent = state.size === "json"
+    ? "Characters per input byte, inside a JSON string"
+    : "Characters per input byte, before escaping";
+  $("#speed-sub").textContent =
+    (state.dir === "encode" ? "Encode" : "Decode") +
+    " time relative to Base64 — lower is faster" +
+    (state.total ? ", compression included" : ", codec and escaping only");
+
+  barChart("chart-size", sizeSorted.map((r) => ({
+    label: label(r.key),
+    value: r.size,
+    color: HUE[r.key],
+    text: fmt(r.size, 4),
+    tip: sizeTip(r, base),
+  })), {
+    title: "Size per codec",
+    marker: base ? base.size : 0,
+    tick: (v) => v.toFixed(2),
+  });
+
+  barChart("chart-speed", speedSorted.map((r) => ({
+    label: label(r.key),
+    value: r.rel,
+    err: r.iqr,
+    color: HUE[r.key],
+    text: fmt(r.rel, 2) + "×",
+    tip: speedTip(r),
+  })), {
+    title: "Speed per codec, relative to Base64",
+    marker: 1,
+    tick: (v) => v.toFixed(1) + "×",
+  });
+
+  renderTable(rs, base, speedSorted[0]);
+  renderCategoryTable(rs);
+  renderMeta();
+}
+
+function sizeTip(r, base) {
+  const pct = base ? (r.size / base.size - 1) * 100 : 0;
+  const esc = Object.values(r.perCat).reduce((a, c) => a + c.escapes, 0);
+  return `<b>${label(r.key)}</b><br>` +
+    `<span class="k">per input byte:</span> ${fmt(r.size, 4)}<br>` +
+    `<span class="k">against Base64:</span> ${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %<br>` +
+    `<span class="k">characters escaped:</span> ${esc.toLocaleString()}`;
+}
+
+function speedTip(r) {
+  return `<b>${label(r.key)}</b><br>` +
+    `<span class="k">${state.dir}, vs Base64:</span> ${fmt(r.rel, 3)}×<br>` +
+    `<span class="k">spread (IQR):</span> ±${fmt(r.iqr / 2, 3)}×<br>` +
+    `<span class="k">rounds:</span> ${state.data.meta.rounds}`;
+}
+
+/** Two figures are called tied when the gap between them is inside the noise
+ *  the run actually measured. Naming a winner inside that gap would be making
+ *  something up. */
+function tied(a, b) {
+  return Math.abs(a.rel - b.rel) < (a.iqr + b.iqr) / 2;
+}
+
+function renderTable(rs, base, fastest) {
+  const sorted = [...rs].sort((a, b) => a.size - b.size);
+  const bestSize = sorted[0];
+  const head = `<thead><tr>
+    <th>Codec</th><th>Size / byte</th><th>vs Base64</th><th>Escaped chars</th>
+    <th>${state.dir} vs Base64</th><th>Spread</th></tr></thead>`;
+  const body = sorted.map((r) => {
+    const pct = base ? (r.size / base.size - 1) * 100 : 0;
+    const esc = Object.values(r.perCat).reduce((a, c) => a + c.escapes, 0);
+    const isTied = fastest && r !== fastest && tied(r, fastest);
+    return `<tr>
+      <td><span class="swatch" style="background:${HUE[r.key]}"></span>${label(r.key)}</td>
+      <td class="num ${r === bestSize ? "best" : ""}">${fmt(r.size, 4)}</td>
+      <td class="num ${pct > 0 ? "worse" : ""}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</td>
+      <td class="num">${esc ? esc.toLocaleString() : "none"}</td>
+      <td class="num ${r === fastest ? "best" : ""}">${fmt(r.rel, 2)}×${
+        isTied ? '<span class="tie">tied</span>' : ""}</td>
+      <td class="num">±${fmt(r.iqr / 2, 3)}×</td>
+    </tr>`;
+  }).join("");
+  $("#table").innerHTML = head + "<tbody>" + body + "</tbody>";
+}
+
+function renderCategoryTable(rs) {
+  const cats = state.categories.filter((c) => rs.some((r) => r.perCat[c]));
+  const head = `<thead><tr><th>Category</th>` +
+    rs.map((r) => `<th><span class="swatch" style="background:${HUE[r.key]}"></span>${label(r.key)}</th>`).join("") +
+    `</tr></thead>`;
+  const body = cats.map((c) => {
+    const vals = rs.map((r) => (r.perCat[c] ? r.perCat[c].size : null));
+    const best = Math.min(...vals.filter((v) => v !== null));
+    const w = state.weights[c] || 0;
+    return `<tr>
+      <td>${c}${w ? "" : ' <span class="tie">not counted</span>'}</td>` +
+      vals.map((v) => v === null ? "<td>—</td>"
+        : `<td class="num ${v === best ? "best" : ""}">${fmt(v, 4)}</td>`).join("") +
+      `</tr>`;
+  }).join("");
+  $("#cattable").innerHTML = head + "<tbody>" + body + "</tbody>";
+  $("#cat-sub").textContent = state.size === "json"
+    ? "Characters per input byte inside JSON, before weighting — lowest in each row is marked"
+    : "Characters per input byte before escaping, before weighting — lowest in each row is marked";
+}
+
+function renderMeta() {
+  const m = state.data.meta;
+  const total = state.data.corpus.samples.reduce((a, s) => a + s.bytes, 0);
+  $("#provenance").textContent =
+    `${state.data.corpus.samples.length} samples, ${total.toLocaleString()} bytes · ` +
+    `${m.rounds} rounds · ${m.generated}`;
+  const rev = Object.entries(m.codec_revisions || {})
+    .map(([k, v]) => `<dt>${k}</dt><dd class="mono">${String(v).slice(0, 12)}</dd>`).join("");
+  $("#meta").innerHTML =
+    `<dt>generated</dt><dd>${m.generated}</dd>` +
+    `<dt>rounds</dt><dd>${m.rounds}</dd>` +
+    `<dt>baseline</dt><dd>${m.baseline}</dd>` +
+    `<dt>cpu</dt><dd>${m.cpu}</dd>` +
+    `<dt>rustc</dt><dd>${m.rustc}</dd>` + rev;
+}
+
+// --- wiring -------------------------------------------------------------
+
+function wire() {
+  $("#profile").addEventListener("change", (e) => {
+    state.profile = e.target.value;
+    applyProfile();
+    syncWeightControls();
+    render();
+  });
+  $("#stage").addEventListener("change", (e) => { state.stage = e.target.value; render(); });
+  $("#reset-weights").addEventListener("click", () => {
+    applyProfile(); syncWeightControls(); render();
+  });
+
+  for (const [attr, key, cast] of [["size", "size", String], ["dir", "dir", String],
+                                   ["total", "total", (v) => v === "1"]]) {
+    document.querySelectorAll(`[data-${attr}]`).forEach((b) => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(`[data-${attr}]`).forEach((o) =>
+          o.setAttribute("aria-pressed", String(o === b)));
+        state[key] = cast(b.dataset[attr]);
+        render();
+      });
+    });
+  }
+
+  $("#theme").addEventListener("click", () => {
+    const now = document.documentElement.getAttribute("data-theme");
+    const next = now === "dark" ? "light" : now === "light" ? "" : "dark";
+    if (next) document.documentElement.setAttribute("data-theme", next);
+    else document.documentElement.removeAttribute("data-theme");
+    try { localStorage.setItem("b2t-theme", next); } catch (_) { /* private mode */ }
+    render();
+  });
+  try {
+    const saved = localStorage.getItem("b2t-theme");
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+  } catch (_) { /* private mode, or site data blocked */ }
+
+  addEventListener("resize", () => { clearTimeout(wire._t); wire._t = setTimeout(render, 120); });
+}
+
+load();
+</script>
+</body>
+</html>
