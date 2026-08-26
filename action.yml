@@ -85,7 +85,13 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           ${{ github.action_path }}/runner-rust/target
-        key: b2t-${{ runner.os }}-${{ hashFiles(format('{0}/runner-rust/Cargo.toml', github.action_path)) }}
+        # Not keyed on a manifest hash: hashFiles only accepts workspace-relative
+        # paths and this action lives outside the workspace -- and the hash would
+        # be the wrong key anyway, since what changes between runs is the codec
+        # checkouts rather than this manifest. A fresh key per run with a shared
+        # prefix restores the most recent build and then saves over it, which is
+        # all a build cache is for.
+        key: b2t-${{ runner.os }}-${{ github.run_id }}
         restore-keys: b2t-${{ runner.os }}-
 
     # The corpus downloads from pinned archives and checks each against a
