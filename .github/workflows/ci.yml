@@ -1,0 +1,71 @@
+# The runner and the corpus, checked. Fast; the benchmark itself is bench.yml.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner:
+    name: The runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: binary2textbench
+      - uses: actions/checkout@v4
+        with: { repository: keywan-ghadami/base91z, path: base91z }
+      - uses: actions/checkout@v4
+        with: { repository: keywan-ghadami/base85n, path: base85n }
+      - uses: actions/checkout@v4
+        with: { repository: keywan-ghadami/base94max, path: base94max }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Link the codecs
+        working-directory: binary2textbench
+        run: ./scripts/link-codecs.sh ../base91z ../base85n ../base94max
+      # Known vectors, round trips, and the two implementations anyone else
+      # also has checked against base64(1) and Python.
+      - name: Test
+        working-directory: binary2textbench/runner-rust
+        run: cargo test --release
+      - name: Warnings are errors
+        working-directory: binary2textbench/runner-rust
+        run: cargo clippy --all-targets --release -- -D warnings
+
+  corpus:
+    name: The corpus reproduces
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # Building it twice must produce the same bytes. The downloaded samples
+      # are pinned by SHA-256 and the generated ones come from a counter stream,
+      # so a difference here means the corpus is not reproducible and no result
+      # taken against it can be compared with another.
+      - name: Build it, then build it again
+        run: |
+          set -euo pipefail
+          python3 corpus/manifest.py --groups=core,short,synthetic
+          python3 -c "
+          import json
+          m = json.load(open('corpus/data/manifest.json'))
+          print('\n'.join(f\"{s['sha256']}  {s['name']}\" for s in m['samples']))
+          " > first.txt
+          rm -rf corpus/data/short corpus/data/synthetic
+          python3 corpus/manifest.py --groups=core,short,synthetic
+          python3 -c "
+          import json
+          m = json.load(open('corpus/data/manifest.json'))
+          print('\n'.join(f\"{s['sha256']}  {s['name']}\" for s in m['samples']))
+          " > second.txt
+          diff first.txt second.txt
+          echo "$(wc -l < first.txt) samples reproduced exactly"

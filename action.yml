@@ -1,0 +1,166 @@
+# The CI mechanism, in one place instead of four.
+#
+# Each codec repository calls this from its own workflow, so the logic for
+# generating a corpus, building the runner against a particular checkout and
+# turning the result into a report lives here and is fixed here.
+#
+# A composite action rather than a reusable workflow: it drops into an existing
+# job beside whatever else that job does, and it has no special rules for being
+# called across repositories.
+name: binary2text benchmark
+description: >-
+  Measures a codec checkout against Base64, classic basE91, Ascii85 and the
+  other codecs on one corpus, and writes a report to the job summary.
+
+inputs:
+  codec-path:
+    description: >-
+      Checkout of the codec under test. Its own revision is what gets measured;
+      the other codecs come from wherever base91z-path and friends point.
+    required: false
+    default: ""
+  baseline-path:
+    description: >-
+      Optional second checkout of the same codec, on the branch the pull request
+      targets. When set, both are measured in this job on this machine and the
+      report is a comparison -- which is the only way two numbers from a shared
+      runner are worth comparing.
+    required: false
+    default: ""
+  codec-name:
+    description: "Which codec codec-path holds: base91z, base85n or base94max."
+    required: false
+    default: ""
+  base91z-path:
+    description: "Checkout of base91z, when it is not the codec under test."
+    required: false
+    default: ""
+  base85n-path:
+    description: "Checkout of base85n, when it is not the codec under test."
+    required: false
+    default: ""
+  base94max-path:
+    description: "Checkout of base94max, when it is not the codec under test."
+    required: false
+    default: ""
+  groups:
+    description: >-
+      Corpus groups to measure. core,short,synthetic takes about a minute;
+      adding silesia takes minutes and downloads 200 MiB.
+    required: false
+    default: "core,short,synthetic"
+  rounds:
+    description: >-
+      Timing rounds. The reported figure is the median across them, so more
+      rounds narrow the spread that a change has to clear to be reported.
+    required: false
+    default: "7"
+  stage:
+    description: "Which compression stage the standing-state table shows."
+    required: false
+    default: "zstd:1"
+  title:
+    description: "Heading for the report."
+    required: false
+    default: "Benchmark"
+
+outputs:
+  results:
+    description: "Path to results.json for the head."
+    value: ${{ steps.run.outputs.results }}
+  report:
+    description: "Path to the Markdown report."
+    value: ${{ steps.report.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache the build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ${{ github.action_path }}/runner-rust/target
+        key: b2t-${{ runner.os }}-${{ hashFiles(format('{0}/runner-rust/Cargo.toml', github.action_path)) }}
+        restore-keys: b2t-${{ runner.os }}-
+
+    # The corpus downloads from pinned archives and checks each against a
+    # recorded SHA-256, so this either reproduces the same bytes or fails.
+    - name: Build the corpus
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: python3 corpus/manifest.py --groups=${{ inputs.groups }}
+
+    - name: Measure the head
+      id: run
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        CODEC_NAME: ${{ inputs.codec-name }}
+        CODEC_PATH: ${{ inputs.codec-path }}
+        B91Z: ${{ inputs.base91z-path }}
+        B85N: ${{ inputs.base85n-path }}
+        B94M: ${{ inputs.base94max-path }}
+        GROUPS: ${{ inputs.groups }}
+        ROUNDS: ${{ inputs.rounds }}
+      run: |
+        set -euo pipefail
+        ./scripts/ci-link.sh "$CODEC_NAME" "$CODEC_PATH" "$B91Z" "$B85N" "$B94M"
+        cd runner-rust
+        cargo run --release -- --groups "$GROUPS" --rounds "$ROUNDS" \
+            --out "$GITHUB_WORKSPACE/results.json"
+        echo "results=$GITHUB_WORKSPACE/results.json" >> "$GITHUB_OUTPUT"
+
+    # The base branch, measured in the same job minutes later rather than read
+    # out of a store from another machine on another day. That is the whole
+    # reason the comparison means anything.
+    - name: Measure the base branch
+      if: inputs.baseline-path != ''
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        CODEC_NAME: ${{ inputs.codec-name }}
+        BASE_PATH: ${{ inputs.baseline-path }}
+        B91Z: ${{ inputs.base91z-path }}
+        B85N: ${{ inputs.base85n-path }}
+        B94M: ${{ inputs.base94max-path }}
+        GROUPS: ${{ inputs.groups }}
+        ROUNDS: ${{ inputs.rounds }}
+      run: |
+        set -euo pipefail
+        ./scripts/ci-link.sh "$CODEC_NAME" "$BASE_PATH" "$B91Z" "$B85N" "$B94M"
+        cd runner-rust
+        cargo run --release -- --groups "$GROUPS" --rounds "$ROUNDS" \
+            --out "$GITHUB_WORKSPACE/base-results.json"
+
+    - name: Write the report
+      id: report
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        TITLE: ${{ inputs.title }}
+        STAGE: ${{ inputs.stage }}
+        HAS_BASE: ${{ inputs.baseline-path != '' }}
+      run: |
+        set -euo pipefail
+        args=("$GITHUB_WORKSPACE/results.json" --title "$TITLE" --stage "$STAGE")
+        if [ "$HAS_BASE" = "true" ]; then
+          args+=(--baseline "$GITHUB_WORKSPACE/base-results.json")
+        fi
+        python3 scripts/report.py "${args[@]}" > "$GITHUB_WORKSPACE/report.md"
+        cat "$GITHUB_WORKSPACE/report.md" >> "$GITHUB_STEP_SUMMARY"
+        echo "report=$GITHUB_WORKSPACE/report.md" >> "$GITHUB_OUTPUT"
+
+    # The page reads results.json from beside itself, so they travel together.
+    - name: Collect the site
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$GITHUB_WORKSPACE/b2t-site"
+        cp "${{ github.action_path }}/site/index.html" "$GITHUB_WORKSPACE/b2t-site/"
+        cp "$GITHUB_WORKSPACE/results.json" "$GITHUB_WORKSPACE/b2t-site/"
+        cp "$GITHUB_WORKSPACE/report.md" "$GITHUB_WORKSPACE/b2t-site/" || true
