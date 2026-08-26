@@ -63,6 +63,18 @@ inputs:
     description: "Heading for the report."
     required: false
     default: "Benchmark"
+  comment:
+    description: >-
+      Post the report onto the pull request, in one comment that is updated on
+      every run rather than added to. Silently skipped when the event is not a
+      pull request, and when the token cannot write -- which is what a pull
+      request from a fork gets.
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to post the comment."
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   results:
@@ -171,6 +183,19 @@ runs:
         } > "$GITHUB_WORKSPACE/report.md"
         cat "$GITHUB_WORKSPACE/report.md" >> "$GITHUB_STEP_SUMMARY"
         echo "report=$GITHUB_WORKSPACE/report.md" >> "$GITHUB_OUTPUT"
+
+    # The job summary is only found by someone who goes looking at the run.
+    # A reviewer reads the pull request, so the report goes there too -- as one
+    # comment, updated in place, because a benchmark that leaves a comment per
+    # push buries the conversation it exists to inform.
+    - name: Post the report on the pull request
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      continue-on-error: true
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: python3 scripts/pr-comment.py "$GITHUB_WORKSPACE/report.md"
 
     # The page reads results.json from beside itself, so they travel together.
     - name: Collect the site
