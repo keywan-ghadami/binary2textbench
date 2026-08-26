@@ -118,7 +118,13 @@ runs:
     # The base branch, measured in the same job minutes later rather than read
     # out of a store from another machine on another day. That is the whole
     # reason the comparison means anything.
+    #
+    # Allowed to fail. A pull request that introduces a codec, or moves where
+    # its manifest lives, has a base branch that cannot be built -- and the
+    # right answer there is a report without a comparison, not a red job. The
+    # report step below notices the missing file and says so.
     - name: Measure the base branch
+      continue-on-error: true
       if: inputs.baseline-path != ''
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -148,10 +154,15 @@ runs:
       run: |
         set -euo pipefail
         args=("$GITHUB_WORKSPACE/results.json" --title "$TITLE" --stage "$STAGE")
-        if [ "$HAS_BASE" = "true" ]; then
+        note=""
+        if [ "$HAS_BASE" = "true" ] && [ -f "$GITHUB_WORKSPACE/base-results.json" ]; then
           args+=(--baseline "$GITHUB_WORKSPACE/base-results.json")
+        elif [ "$HAS_BASE" = "true" ]; then
+          note="> The base branch could not be measured, so this is where things stand rather than what changed. Expected on a pull request that introduces or relocates the codec."
         fi
-        python3 scripts/report.py "${args[@]}" > "$GITHUB_WORKSPACE/report.md"
+        { [ -n "$note" ] && printf '%s\n\n' "$note"
+          python3 scripts/report.py "${args[@]}"
+        } > "$GITHUB_WORKSPACE/report.md"
         cat "$GITHUB_WORKSPACE/report.md" >> "$GITHUB_STEP_SUMMARY"
         echo "report=$GITHUB_WORKSPACE/report.md" >> "$GITHUB_OUTPUT"
 
