@@ -139,10 +139,14 @@ runs:
     #
     # Allowed to fail. A pull request that introduces a codec, or moves where
     # its manifest lives, has a base branch that cannot be built -- and the
-    # right answer there is a report without a comparison, not a red job. The
-    # report step below notices the missing file and says so.
+    # right answer there is a report without a comparison, not a red job.
+    #
+    # The failure is swallowed in the shell rather than with continue-on-error,
+    # which is not among the keys a composite action's steps honour: it parses
+    # and does nothing, so relying on it would have sunk the whole action the
+    # first time a base branch would not build -- exactly the case this step
+    # exists to survive.
     - name: Measure the base branch
-      continue-on-error: true
       if: inputs.baseline-path != ''
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -155,11 +159,18 @@ runs:
         GROUPS: ${{ inputs.groups }}
         ROUNDS: ${{ inputs.rounds }}
       run: |
-        set -euo pipefail
-        ./scripts/ci-link.sh "$CODEC_NAME" "$BASE_PATH" "$B91Z" "$B85N" "$B94M"
-        cd runner-rust
-        cargo run --release -- --groups "$GROUPS" --rounds "$ROUNDS" \
-            --out "$GITHUB_WORKSPACE/base-results.json"
+        set -uo pipefail
+        if ./scripts/ci-link.sh "$CODEC_NAME" "$BASE_PATH" "$B91Z" "$B85N" "$B94M" &&
+           ( cd runner-rust &&
+             cargo run --release -- --groups "$GROUPS" --rounds "$ROUNDS" \
+                 --out "$GITHUB_WORKSPACE/base-results.json" ); then
+          echo "the base branch was measured"
+        else
+          echo "::warning::the base branch could not be measured; reporting where things stand instead"
+          # A half-written file would be worse than none: the report step keys
+          # off whether it exists.
+          rm -f "$GITHUB_WORKSPACE/base-results.json"
+        fi
 
     - name: Write the report
       id: report
@@ -190,12 +201,15 @@ runs:
     # push buries the conversation it exists to inform.
     - name: Post the report on the pull request
       if: inputs.comment == 'true' && github.event_name == 'pull_request'
-      continue-on-error: true
       shell: bash
       working-directory: ${{ github.action_path }}
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: python3 scripts/pr-comment.py "$GITHUB_WORKSPACE/report.md"
+      # Failing to comment must never fail a benchmark, and composite-action
+      # steps ignore continue-on-error, so the shell has to say so.
+      run: |
+        python3 scripts/pr-comment.py "$GITHUB_WORKSPACE/report.md" ||
+          echo "::warning::could not post the comment; the report is in the job summary"
 
     # The page reads results.json from beside itself, so they travel together.
     - name: Collect the site
