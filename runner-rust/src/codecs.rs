@@ -152,15 +152,32 @@ pub fn base64_encode(data: &[u8]) -> String {
     String::from_utf8(out).expect("alphabet is ASCII")
 }
 
-fn b64_value(c: u8) -> Result<u32, CodecError> {
-    Ok(match c {
-        b'A'..=b'Z' => (c - b'A') as u32,
-        b'a'..=b'z' => (c - b'a') as u32 + 26,
-        b'0'..=b'9' => (c - b'0') as u32 + 52,
-        b'+' => 62,
-        b'/' => 63,
-        _ => return Err(CodecError(format!("base64: invalid character {:?}", c as char))),
+/// Reverse lookup for the alphabet above, built once.
+///
+/// A table rather than a chain of range tests, and not as a micro-optimisation:
+/// Base64 is the denominator of every figure in the report, so a baseline that
+/// decodes by branching four times per character would flatter every other
+/// codec by the width of that handicap. The other decoders here all index a
+/// table or subtract a constant; this one has to be measured on the same terms.
+fn b64_table() -> &'static [i8; 256] {
+    use std::sync::OnceLock;
+    static T: OnceLock<[i8; 256]> = OnceLock::new();
+    T.get_or_init(|| {
+        let mut t = [-1i8; 256];
+        for (v, &c) in B64.iter().enumerate() {
+            t[c as usize] = v as i8;
+        }
+        t
     })
+}
+
+#[inline]
+fn b64_value(table: &[i8; 256], c: u8) -> Result<u32, CodecError> {
+    let v = table[c as usize];
+    if v < 0 {
+        return Err(CodecError(format!("base64: invalid character {:?}", c as char)));
+    }
+    Ok(v as u32)
 }
 
 pub fn base64_decode(s: &str) -> Result<Vec<u8>, CodecError> {
@@ -172,19 +189,20 @@ pub fn base64_decode(s: &str) -> Result<Vec<u8>, CodecError> {
     if body.len() % 4 != 0 && (body.len() % 4) < 2 {
         return Err(CodecError("base64: truncated input".into()));
     }
+    let table = b64_table();
     let mut out = Vec::with_capacity(body.len() / 4 * 3 + 3);
     let (groups, rem) = body.as_chunks::<4>();
     for c in groups {
-        let n = b64_value(c[0])? << 18
-            | b64_value(c[1])? << 12
-            | b64_value(c[2])? << 6
-            | b64_value(c[3])?;
+        let n = b64_value(table, c[0])? << 18
+            | b64_value(table, c[1])? << 12
+            | b64_value(table, c[2])? << 6
+            | b64_value(table, c[3])?;
         out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8]);
     }
     if !rem.is_empty() {
         let mut n = 0u32;
         for (i, &c) in rem.iter().enumerate() {
-            n |= b64_value(c)? << (18 - 6 * i);
+            n |= b64_value(table, c)? << (18 - 6 * i);
         }
         for i in 0..tail.min(rem.len() - 1) {
             out.push((n >> (16 - 8 * i)) as u8);

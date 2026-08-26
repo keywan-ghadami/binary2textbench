@@ -85,9 +85,16 @@ def by_category(results: dict) -> dict:
 
 
 def totals(results: dict) -> dict:
-    """Whole-corpus totals per (codec, stage), for the summary table."""
+    """Whole-corpus totals per (codec, stage).
+
+    `enc` and `iqr` are the byte-weighted per-round ratios against Base64, which
+    is what the change report compares. `enc_ns` and `dec_ns` are the absolute
+    times, which the standing table needs because it has to add the compression
+    stage on and re-form the ratio itself.
+    """
     out: dict = defaultdict(lambda: {"input": 0, "json": 0, "raw": 0, "escapes": 0,
-                                     "enc": 0.0, "iqr": 0.0})
+                                     "enc": 0.0, "iqr": 0.0,
+                                     "enc_ns": 0.0, "dec_ns": 0.0})
     for m in results["measurements"]:
         e = out[(m["codec"], m["stage"])]
         n = m["input_bytes"]
@@ -97,6 +104,8 @@ def totals(results: dict) -> dict:
         e["escapes"] += m["escapes"]
         e["enc"] += m["encode_rel"]["ns"] * n
         e["iqr"] += m["encode_rel"]["iqr_ns"] * n
+        e["enc_ns"] += m["encode"]["ns"]
+        e["dec_ns"] += m["decode"]["ns"]
     for e in out.values():
         if e["input"]:
             e["enc"] /= e["input"]
@@ -104,29 +113,120 @@ def totals(results: dict) -> dict:
     return out
 
 
+def compression_cost(results: dict) -> dict:
+    """What the compression stage costs, per stage, over the whole corpus.
+
+    Measured once per sample and shared by every codec behind it, so adding it
+    to each codec's own time is what makes a row an end-to-end figure.
+    """
+    out: dict = defaultdict(lambda: {"c": 0.0, "d": 0.0})
+    for row in results["compression"]:
+        out[row["stage"]]["c"] += row["compress"]["ns"]
+        out[row["stage"]]["d"] += row["decompress"]["ns"]
+    return out
+
+
 def pct(new: float, old: float) -> float:
     return (new / old - 1.0) * 100.0 if old else 0.0
 
 
-def state_report(r: dict, stage: str) -> list[str]:
-    t = totals(r)
-    rows = sorted(
-        ((codec, e) for (codec, st), e in t.items() if st == stage),
-        key=lambda kv: kv[1]["json"] / max(kv[1]["input"], 1),
-    )
-    if not rows:
-        return [f"_no measurements at stage `{stage}`_"]
+# The two cases a caller actually chooses between. Every zstd level is in the
+# artifact and on the page; two tables is what fits in a comment and answers the
+# question somebody opens it with.
+HEADLINE_STAGES = (("none", "Uncompressed"), ("zstd:1", "With zstd −1 in front"))
+
+
+def _row(label: str, e: dict, cc: dict, base_enc: float, base_dec: float) -> dict:
+    """One codec at one stage, as the two numbers a reader came for.
+
+    Size is a share of the *original* bytes, not of whatever the compressor left
+    -- "my megabyte becomes this much JSON" is the question, and a ratio against
+    the compressed intermediate answers a question nobody asked.
+
+    Time counts the compression stage too, because the reader is choosing a
+    pipeline and not a subroutine. It is the same stage for every codec in the
+    table, so where it dominates every row lands near 100 % -- which is itself
+    the answer: at that setting the encoder is not what costs you time.
+    """
+    return {
+        "label": label,
+        "json": e["json"] / e["input"],
+        "raw": e["raw"] / e["input"],
+        "escapes": e["escapes"],
+        "enc": (e["enc_ns"] + cc["c"]) / base_enc if base_enc else 0.0,
+        "dec": (e["dec_ns"] + cc["d"]) / base_dec if base_dec else 0.0,
+    }
+
+
+def headline_rows(results: dict, stage: str) -> list[dict]:
+    t = totals(results)
+    cc = compression_cost(results).get(stage, {"c": 0.0, "d": 0.0})
+    base = t.get(("base64", stage))
+    if not base:
+        return []
+    base_enc = base["enc_ns"] + cc["c"]
+    base_dec = base["dec_ns"] + cc["d"]
+
+    rows = [_row(codec, e, cc, base_enc, base_dec)
+            for (codec, st), e in t.items() if st == stage]
+
+    # Base91z decides for itself whether to compress, so beside a table of
+    # codecs behind a compressor it is the honest entry for what it does. Its
+    # own compression is inside its time already; nothing is added.
+    if stage != "none":
+        auto = t.get(("base91z", "auto"))
+        if auto:
+            rows.append(_row("base91z (auto)", auto, {"c": 0.0, "d": 0.0},
+                             base_enc, base_dec))
+
+    rows.sort(key=lambda r: r["json"])
+    return rows
+
+
+def _size_cell(r: dict) -> str:
+    """The size, and what escaping added to it where it added anything."""
+    if r["escapes"] == 0:
+        return f"{r['json'] * 100:.1f} %"
+    return f"{r['json'] * 100:.1f} % ({r['raw'] * 100:.1f} % raw)"
+
+
+def state_report(r: dict) -> list[str]:
     out = [
-        f"#### At `{stage}`",
+        "Size is the encoded payload as a share of the **original** bytes -- what "
+        "ends up inside the JSON string. Where an alphabet needs escaping, the "
+        "length before escaping follows in brackets. Time is against Base64 doing "
+        "the same job at the same setting, compression included: **under 100 % is "
+        "faster**. Best in each column is bold.",
         "",
-        "| codec | size in JSON | raw size | escaped chars | encode vs base64 |",
-        "|---|--:|--:|--:|--:|",
     ]
-    for codec, e in rows:
-        out.append(
-            f"| `{codec}` | {e['json'] / e['input']:.4f} | {e['raw'] / e['input']:.4f} "
-            f"| {e['escapes'] or '—'} | {e['enc']:.2f}× ±{e['iqr'] / 2:.2f} |"
-        )
+    for stage, title in HEADLINE_STAGES:
+        rows = headline_rows(r, stage)
+        if not rows:
+            continue
+        # Bold what the reader sees. Two rows that both print 44.4 % differ
+        # somewhere in the fourth decimal, and marking one of them the winner
+        # over a difference the table does not show is worse than marking
+        # neither -- so the comparison is on the rendered text.
+        sizes = [_size_cell(x) for x in rows]
+        encs = [f"{x['enc'] * 100:.0f} %" for x in rows]
+        decs = [f"{x['dec'] * 100:.0f} %" for x in rows]
+        best_size = sizes[min(range(len(rows)), key=lambda i: rows[i]["json"])]
+        best_enc = encs[min(range(len(rows)), key=lambda i: rows[i]["enc"])]
+        best_dec = decs[min(range(len(rows)), key=lambda i: rows[i]["dec"])]
+
+        def cell(text: str, best: str) -> str:
+            return f"**{text}**" if text == best else text
+
+        out.append(f"**{title}**")
+        out.append("")
+        out.append("| codec | size in JSON | encode | decode |")
+        out.append("|---|--:|--:|--:|")
+        for x, size, enc, dec in zip(rows, sizes, encs, decs):
+            out.append(
+                f"| `{x['label']}` | {cell(size, best_size)} "
+                f"| {cell(enc, best_enc)} | {cell(dec, best_dec)} |"
+            )
+        out.append("")
     return out
 
 
@@ -211,8 +311,6 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("results", type=Path)
     ap.add_argument("--baseline", type=Path, default=None)
-    ap.add_argument("--stage", default="zstd:1",
-                    help="which compression stage the state table shows")
     ap.add_argument("--title", default="Benchmark")
     args = ap.parse_args()
 
@@ -237,13 +335,13 @@ def main() -> None:
         lines.append("")
         lines += diff_report(new, old)
         lines.append("")
-        lines.append("<details><summary>Where things stand on the head</summary>")
+        lines.append("<details><summary>What each encoding costs on this head</summary>")
         lines.append("")
-        lines += state_report(new, args.stage)
+        lines += state_report(new)
         lines.append("")
         lines.append("</details>")
     else:
-        lines += state_report(new, args.stage)
+        lines += state_report(new)
 
     lines.append("")
     revs = ", ".join(f"{k} `{v[:12]}`" for k, v in (meta.get("codec_revisions") or {}).items())
