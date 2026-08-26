@@ -122,15 +122,18 @@ const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 
 pub fn base64_encode(data: &[u8]) -> String {
     let mut out = Vec::with_capacity(4 * data.len().div_ceil(3));
-    let mut chunks = data.chunks_exact(3);
-    for c in &mut chunks {
+    // as_chunks rather than chunks_exact: the group size is a constant, so it
+    // belongs in the type where the compiler can see it rather than in a
+    // runtime length the indexing below has to be trusted against.
+    let (groups, remainder) = data.as_chunks::<3>();
+    for c in groups {
         let n = (c[0] as u32) << 16 | (c[1] as u32) << 8 | c[2] as u32;
         out.push(B64[(n >> 18) as usize & 63]);
         out.push(B64[(n >> 12) as usize & 63]);
         out.push(B64[(n >> 6) as usize & 63]);
         out.push(B64[n as usize & 63]);
     }
-    match chunks.remainder() {
+    match remainder {
         [a] => {
             let n = (*a as u32) << 16;
             out.push(B64[(n >> 18) as usize & 63]);
@@ -170,15 +173,14 @@ pub fn base64_decode(s: &str) -> Result<Vec<u8>, CodecError> {
         return Err(CodecError("base64: truncated input".into()));
     }
     let mut out = Vec::with_capacity(body.len() / 4 * 3 + 3);
-    let mut chunks = body.chunks_exact(4);
-    for c in &mut chunks {
+    let (groups, rem) = body.as_chunks::<4>();
+    for c in groups {
         let n = b64_value(c[0])? << 18
             | b64_value(c[1])? << 12
             | b64_value(c[2])? << 6
             | b64_value(c[3])?;
         out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8]);
     }
-    let rem = chunks.remainder();
     if !rem.is_empty() {
         let mut n = 0u32;
         for (i, &c) in rem.iter().enumerate() {
@@ -274,9 +276,9 @@ pub fn base91_classic_decode(s: &str) -> Result<Vec<u8>, CodecError> {
 
 pub fn ascii85_encode(data: &[u8]) -> String {
     let mut out = Vec::with_capacity(data.len() * 5 / 4 + 4);
-    let mut chunks = data.chunks_exact(4);
-    for c in &mut chunks {
-        let n = u32::from_be_bytes([c[0], c[1], c[2], c[3]]);
+    let (groups, rem) = data.as_chunks::<4>();
+    for c in groups {
+        let n = u32::from_be_bytes(*c);
         if n == 0 {
             // The shortcut that makes Ascii85 good at zero runs, and part of
             // the format rather than an optimisation: leaving it out would
@@ -286,7 +288,6 @@ pub fn ascii85_encode(data: &[u8]) -> String {
         }
         push_base85(&mut out, n, 5);
     }
-    let rem = chunks.remainder();
     if !rem.is_empty() {
         let mut buf = [0u8; 4];
         buf[..rem.len()].copy_from_slice(rem);
