@@ -36,10 +36,15 @@ pub struct Codec {
 
 /// A codec that compresses on its own behalf: encode and decode take the raw
 /// bytes and the codec decides what to do with them.
+///
+/// `encode` takes the level the stage names, so that a compression setting the
+/// report offers means the same thing for this codec as for the others. `None`
+/// is the stage that puts no compressor in front of anybody; a codec that
+/// carries its own then uses its own default, because that is what a caller
+/// who chose no external compression gets from it.
 pub struct NativePath {
-    pub label: &'static str,
     pub note: &'static str,
-    pub encode: fn(&[u8]) -> String,
+    pub encode: fn(&[u8], Option<i32>) -> String,
     pub decode: fn(&str) -> Result<Vec<u8>, CodecError>,
 }
 
@@ -104,8 +109,8 @@ pub fn all() -> Vec<Codec> {
             // compress. Measuring it only with an external compressor in front
             // would measure a configuration no caller of it has.
             native: Some(NativePath {
-                label: "auto",
-                note: "Base91z choosing its own compression, at its own default level",
+                note: "Base91z as it ships: it decides per payload whether to \
+                       compress, at the level the stage names",
                 // `encode_at`, not `encode_auto`. Both decide for themselves
                 // whether to compress and they agree on the corpus, but
                 // `encode_auto` reaches the decision by building *both*
@@ -118,10 +123,14 @@ pub fn all() -> Vec<Codec> {
                 // `encode_auto` is the reference the decision is checked
                 // against, not a configuration anybody ships.
                 //
-                // DEFAULT_LEVEL is what a caller who does not pass a level
-                // gets, so it is what "as it ships" means.
-                encode: |d| base91z::encode_at(d, base91z::DEFAULT_LEVEL)
-                    .expect("base91z encode_at"),
+                // The level is the stage's, so that "zstd:9" means level 9 for
+                // this codec as it does for every other. Without a stage it is
+                // DEFAULT_LEVEL, which is what a caller who passes no level
+                // gets and therefore what "as it ships" means.
+                encode: |d, level| {
+                    base91z::encode_at(d, level.unwrap_or(base91z::DEFAULT_LEVEL))
+                        .expect("base91z encode_at")
+                },
                 decode: |s| base91z::decode(s).map_err(|e| CodecError(format!("{e:?}"))),
             }),
         },

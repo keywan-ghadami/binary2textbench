@@ -20,10 +20,17 @@
 //!
 //! The compression stage is timed once per (sample, level) rather than once per
 //! codec, because it is the same bytes doing the same work whichever codec
-//! comes after it. results.json carries the two costs separately and the site
-//! adds them; that way a reader can ask for the total, or for the codec alone,
-//! without a second run. Base91z is the exception: it decides for itself
-//! whether to compress, so its `auto` variant is timed whole.
+//! comes after it, and with a context kept for the whole run rather than built
+//! per call -- see `Stages`, where the reason is that a discarded `ZSTD_DCtx`
+//! is not a property of an encoding. results.json carries the two costs
+//! separately and the site adds them; that way a reader can ask for the total,
+//! or for the codec alone, without a second run.
+//!
+//! A codec that decides for itself whether to compress is timed whole, at the
+//! level the stage names -- so it has one cell per stage like everybody else,
+//! marked `native`, and a compression setting means one thing across the whole
+//! report. Its measurements behind the stage's compressor are kept too, marked
+//! `native: false`, for a reader who wants the container on its own.
 //!
 //! Nothing is written that did not come back: every cell round-trips through
 //! the full pipeline and is compared against the input before it is timed.
@@ -154,6 +161,10 @@ struct Row {
     sample: String,
     codec: String,
     stage: String,
+    /// True where the codec carried the compression itself rather than being
+    /// measured behind the stage. Base91z has both: this is the one the report
+    /// shows, because it is the one a caller of it gets.
+    native: bool,
     /// Bytes handed to the codec: the sample, or what the stage made of it.
     coded_input_bytes: usize,
     /// The original sample size, which every ratio worth reading is against.
@@ -306,30 +317,46 @@ fn main() {
         }
 
         // The codecs that ship their own compression decision, measured as
-        // they ship: raw bytes in, one call, nothing bolted on.
-        for (ci, codec) in codecs.iter().enumerate() {
-            let Some(native) = &codec.native else { continue };
-            let encoded = (native.encode)(data);
-            let mut escaped = String::with_capacity(encoded.len());
-            json::escape_into(&encoded, &mut escaped);
-            let unescaped = json::unescape(&escaped).expect("unescape");
-            let decoded = (native.decode)(&unescaped)
-                .unwrap_or_else(|e| panic!("{} ({}) on {}: {e}", codec.name, native.label, meta.name));
-            assert_eq!(decoded, *data, "{} ({}) did not return {}", codec.name, native.label, meta.name);
+        // they ship: raw bytes in, one call, nothing bolted on -- but at the
+        // level the stage names, so that picking a compression setting in the
+        // report means the same thing for every row in it. One cell per stage,
+        // the same as every other codec has.
+        for stage in STAGES {
+            for (ci, codec) in codecs.iter().enumerate() {
+                let Some(native) = &codec.native else { continue };
+                let level = match stage {
+                    Stage::None => None,
+                    Stage::Zstd(l) => Some(l),
+                };
+                let encoded = (native.encode)(data, level);
+                let mut escaped = String::with_capacity(encoded.len());
+                json::escape_into(&encoded, &mut escaped);
+                let unescaped = json::unescape(&escaped).expect("unescape");
+                let decoded = (native.decode)(&unescaped).unwrap_or_else(|e| {
+                    panic!("{} native at {} on {}: {e}", codec.name, stage.label(), meta.name)
+                });
+                assert_eq!(
+                    decoded, *data,
+                    "{} native at {} did not return {}",
+                    codec.name,
+                    stage.label(),
+                    meta.name
+                );
 
-            cells.push(Cell {
-                sample: si,
-                codec: ci,
-                stage: Stage::None,
-                native: true,
-                input: data.clone(),
-                encoded,
-                escaped,
-                encode_rounds: Vec::with_capacity(args.rounds),
-                decode_rounds: Vec::with_capacity(args.rounds),
-                encode_rel_rounds: Vec::with_capacity(args.rounds),
-                decode_rel_rounds: Vec::with_capacity(args.rounds),
-            });
+                cells.push(Cell {
+                    sample: si,
+                    codec: ci,
+                    stage,
+                    native: true,
+                    input: data.clone(),
+                    encoded,
+                    escaped,
+                    encode_rounds: Vec::with_capacity(args.rounds),
+                    decode_rounds: Vec::with_capacity(args.rounds),
+                    encode_rel_rounds: Vec::with_capacity(args.rounds),
+                    decode_rel_rounds: Vec::with_capacity(args.rounds),
+                });
+            }
         }
     }
     eprintln!(
@@ -358,10 +385,18 @@ fn main() {
     // property of an encoding.
     eprintln!("warming up ...");
     let sources: Vec<Vec<u8>> = samples.iter().map(|(_, d)| d.clone()).collect();
+    let widest = sources.iter().map(Vec::len).max().unwrap_or(0);
+    let mut stages = Stages::new(
+        STAGES.iter().filter_map(|s| match s {
+            Stage::Zstd(l) => Some(*l),
+            Stage::None => None,
+        }),
+        widest,
+    );
     for group in &groups {
         measure_group(&mut cells, group, baseline, &codecs, false);
     }
-    measure_compression(&mut compression, &sources, false);
+    measure_compression(&mut compression, &sources, &mut stages, false);
 
     for round in 0..args.rounds {
         let t = Instant::now();
@@ -375,7 +410,7 @@ fn main() {
             group.rotate_left(by);
             measure_group(&mut cells, group, baseline, &codecs, true);
         }
-        measure_compression(&mut compression, &sources, true);
+        measure_compression(&mut compression, &sources, &mut stages, true);
         eprintln!("round {}/{} in {:.1} s", round + 1, args.rounds, t.elapsed().as_secs_f64());
     }
 
@@ -388,11 +423,8 @@ fn main() {
             Row {
                 sample: meta.name.clone(),
                 codec: codec.name.to_string(),
-                stage: if cell.native {
-                    codec.native.as_ref().expect("native cell has a native path").label.to_string()
-                } else {
-                    cell.stage.label()
-                },
+                stage: cell.stage.label(),
+                native: cell.native,
                 coded_input_bytes: cell.input.len(),
                 input_bytes: data.len(),
                 encoded_bytes: cell.encoded.len(),
@@ -406,7 +438,7 @@ fn main() {
         })
         .collect();
     measurements.sort_by(|a, b| {
-        (&a.sample, &a.codec, &a.stage).cmp(&(&b.sample, &b.codec, &b.stage))
+        (&a.sample, &a.codec, &a.stage, a.native).cmp(&(&b.sample, &b.codec, &b.stage, b.native))
     });
 
     let mut compression_rows: Vec<CompressionRow> = compression
@@ -435,24 +467,19 @@ fn main() {
             groups: manifest.groups.clone(),
             samples: samples.iter().map(|(m, _)| m.clone()).collect(),
         },
-        // Both entry points of a codec that has two are listed, because the
-        // report shows them as separate rows and a reader needs to know which
-        // is which.
+        // One entry per codec, because the report shows one row per codec. A
+        // codec with a native path is described by that path, since that is the
+        // row: its measurements behind the stage are still in `measurements`,
+        // marked `native: false`, for a reader who wants the container on its
+        // own.
         codecs: codecs
             .iter()
-            .flat_map(|c| {
-                std::iter::once(CodecMeta { name: c.name.into(), note: c.note.into() })
-                    .chain(c.native.as_ref().map(|n| CodecMeta {
-                        name: format!("{} ({})", c.name, n.label),
-                        note: n.note.into(),
-                    }))
+            .map(|c| CodecMeta {
+                name: c.name.into(),
+                note: c.native.as_ref().map_or(c.note, |n| n.note).into(),
             })
             .collect(),
-        stages: STAGES
-            .iter()
-            .map(|s| s.label())
-            .chain(codecs.iter().filter_map(|c| c.native.as_ref()).map(|n| n.label.to_string()))
-            .collect(),
+        stages: STAGES.iter().map(|s| s.label()).collect(),
         profiles: read_profiles(&args.profiles),
         compression: compression_rows,
         measurements,
@@ -537,16 +564,30 @@ fn measure_group(
 /// Times one cell's encode and decode: the whole pipeline in each direction.
 fn time_cell(cell: &mut Cell, codecs: &[codecs::Codec]) -> (f64, f64) {
     let codec = &codecs[cell.codec];
-    let (encode, decode) = if cell.native {
-        let native = codec.native.as_ref().expect("native cell has a native path");
-        (native.encode, native.decode)
-    } else {
-        (codec.encode, codec.decode)
+    // A native codec is handed the stage's level; every other one was handed
+    // bytes the stage had already compressed, and takes none. Which of the two
+    // it is was decided when the cell was built, so what is left inside the
+    // clock is a branch on a `bool` that predicts perfectly, against a call
+    // that allocates a string.
+    let native = cell.native.then(|| {
+        let n = codec.native.as_ref().expect("native cell has a native path");
+        let level = match cell.stage {
+            Stage::None => None,
+            Stage::Zstd(l) => Some(l),
+        };
+        (n, level)
+    });
+    let decode = match native {
+        Some((n, _)) => n.decode,
+        None => codec.decode,
     };
 
     let mut scratch = String::with_capacity(cell.escaped.len());
     let enc = time_once(|| {
-        let encoded = encode(&cell.input);
+        let encoded = match native {
+            Some((n, level)) => (n.encode)(&cell.input, level),
+            None => (codec.encode)(&cell.input),
+        };
         scratch.clear();
         json::escape_into(&encoded, &mut scratch);
         std::hint::black_box(scratch.len());
@@ -559,10 +600,53 @@ fn time_cell(cell: &mut Cell, codecs: &[codecs::Codec]) -> (f64, f64) {
     (enc, dec)
 }
 
+/// The zstd contexts and buffers the compression stage is measured with, kept
+/// for the whole run rather than built per measurement.
+///
+/// `zstd::bulk::compress` and `zstd::bulk::decompress` are one-line
+/// conveniences that build a `ZSTD_CCtx` or `ZSTD_DCtx`, use it once and drop
+/// it. On a field-sized payload that setup *is* the measurement -- 14 us to
+/// decompress a 92-byte record that takes 27 ns once the context is kept -- and
+/// 55 of the 88 samples here are under 200 bytes. Measuring it that way makes
+/// the stage look enormously expensive, and since the site adds the stage to
+/// both sides of every ratio, an enormous constant drags every codec's figure
+/// towards 1.0 and hides what the codecs actually differ by.
+///
+/// A caller who compresses more than once reuses a context; this crate's own
+/// README says the point is to measure what a codec does, not how well someone
+/// optimised the thing around it. So: one decompressor for the whole run, since
+/// a decompression context carries no level and there is nothing to key it by,
+/// and one compressor per level, since a compression context is built around
+/// its level's window and changing that is what building a new one is for.
+/// Output buffers are kept for the same reason -- an allocation per call is not
+/// a property of zstd either.
+struct Stages {
+    compressors: BTreeMap<i32, zstd::bulk::Compressor<'static>>,
+    decompressor: zstd::bulk::Decompressor<'static>,
+    into: Vec<u8>,
+}
+
+impl Stages {
+    fn new(levels: impl Iterator<Item = i32>, widest: usize) -> Stages {
+        Stages {
+            compressors: levels
+                .map(|l| (l, zstd::bulk::Compressor::new(l).expect("zstd compressor")))
+                .collect(),
+            decompressor: zstd::bulk::Decompressor::new().expect("zstd decompressor"),
+            into: Vec::with_capacity(zstd::zstd_safe::compress_bound(widest).max(widest)),
+        }
+    }
+}
+
 /// The compression stages, timed once per (sample, level) rather than once per
 /// codec: it is the same bytes doing the same work whichever codec follows, and
 /// measuring it six times would only add six times the noise.
-fn measure_compression(compression: &mut [CompressionCell], sources: &[Vec<u8>], record: bool) {
+fn measure_compression(
+    compression: &mut [CompressionCell],
+    sources: &[Vec<u8>],
+    stages: &mut Stages,
+    record: bool,
+) {
     for cell in compression.iter_mut() {
         let Stage::Zstd(level) = cell.stage else {
             // Not compressing costs nothing, and is recorded as costing
@@ -576,13 +660,21 @@ fn measure_compression(compression: &mut [CompressionCell], sources: &[Vec<u8>],
         };
         let source = &sources[cell.sample];
         let compressed = &cell.output;
+        let c = stages.compressors.get_mut(&level).expect("a compressor per level");
+        let into = &mut stages.into;
         let enc = time_once(|| {
-            std::hint::black_box(zstd::bulk::compress(source, level).expect("zstd").len());
+            into.clear();
+            std::hint::black_box(c.compress_to_buffer(source, into).expect("zstd"));
         });
+        // The output size comes from the frame a real caller would have: zstd
+        // writes the content size into an ordinary frame by default, so this is
+        // a hint the pipeline genuinely carries and not one the harness
+        // invented. `decompress_to_buffer` bounds itself by the capacity.
+        let d = &mut stages.decompressor;
         let dec = time_once(|| {
-            std::hint::black_box(
-                zstd::bulk::decompress(compressed, source.len().max(1)).expect("zstd").len(),
-            );
+            into.clear();
+            into.reserve(source.len().max(1));
+            std::hint::black_box(d.decompress_to_buffer(compressed, into).expect("zstd"));
         });
         if record {
             cell.compress_rounds.push(enc);
