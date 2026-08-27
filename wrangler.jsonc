@@ -1,0 +1,20 @@
+// Cloudflare Workers, assets only: this repository holds a page and the data
+// it draws, and nothing that runs on a server.
+//
+// There is no build step and there cannot be one. The page needs results.json
+// beside it, and that file is not built -- it is measured, by a run that needs
+// a Rust toolchain, three codec checkouts and a couple of minutes of quiet CPU.
+// A build container has none of those, and numbers taken in one would be
+// worthless anyway. So the benchmark run commits site/results.json and this
+// deploys whatever is committed.
+//
+//   Build command:   (leave empty)
+//   Deploy command:  npx wrangler deploy
+{
+  "name": "bench",
+  // Assets-only: no "main", because there is no Worker script to run.
+  "compatibility_date": "2026-08-27",
+  "assets": {
+    "directory": "./site"
+  }
+}

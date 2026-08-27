@@ -113,6 +113,26 @@ beside it. Both are what CI uploads as an artifact.
 Python's `base64.a85encode` and Python's `json.dumps` — the baseline and the
 escaper decide every other number, so being wrong there would be invisible.
 
+## The page
+
+`site/` is deployed to <https://bench.ghadami.de> as a Cloudflare Worker with
+static assets — `wrangler.jsonc` is the whole configuration, and there is no
+build step to set:
+
+| setting | value |
+|---|---|
+| Build command | *(empty)* |
+| Deploy command | `npx wrangler deploy` |
+
+There cannot be a build step. The page needs `results.json` beside it, and that
+file is not built but measured — by a run that needs a Rust toolchain, three
+codec checkouts and a couple of minutes of quiet CPU. A build container has
+none of those, and numbers taken in one would be worthless. So the scheduled
+benchmark commits `site/results.json` and the deploy serves what is committed.
+
+On Cloudflare Pages instead, the equivalent is an empty build command with
+`site` as the output directory.
+
 ## In CI
 
 `action.yml` is a composite action each codec repository calls, so the CI logic
