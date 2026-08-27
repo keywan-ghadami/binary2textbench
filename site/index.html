@@ -118,7 +118,16 @@ details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; }
 .chart-scroll { overflow-x: auto; }
 svg { display: block; max-width: 100%; }
-.bar-label { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.bar-label {
+  fill: var(--ink); font-size: 12px; font-weight: 600;
+  /* The Base64 marker runs behind these, and a dashed line through a digit is
+     the kind of thing that makes a reader distrust the number. A halo in the
+     surface colour knocks the line out from under the text. */
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
 .cat-label { fill: var(--ink-2); font-size: 12.5px; }
 .tick { fill: var(--muted); font-size: 11px; }
 .gridline { stroke: var(--grid); stroke-width: 1; }
@@ -268,8 +277,7 @@ const HUE = {
   "ascii85":        "var(--s3)",
   "base85n":        "var(--s4)",
   "base94max":      "var(--s5)",
-  "base91z":        "var(--s6)",
-  "base91z·auto":   "var(--s7)",
+  "base91z (auto)": "var(--s6)",
 };
 const ORDER = Object.keys(HUE);
 
@@ -321,7 +329,16 @@ async function load() {
  *  its own rather than a stage, because it is a different thing being offered:
  *  the codec as it ships, against the others with a compressor bolted in front. */
 function rowKey(m) {
-  return m.stage === "auto" ? "base91z·auto" : m.codec;
+  return m.stage === "auto" ? "base91z (auto)" : m.codec;
+}
+
+/** Base91z decides for itself whether to compress, and that decision is the
+ *  format. Forcing it off is an override for a caller who already knows the
+ *  data is incompressible -- never better, and listing it beside the real thing
+ *  only invites the question of which one to read. The measurements are still
+ *  in results.json for anyone who wants them. */
+function isOverriddenBase91z(m) {
+  return m.codec === "base91z" && m.stage !== "auto";
 }
 
 function categoryOf(d) {
@@ -351,6 +368,7 @@ function init() {
   state.index = {};
   const entries = {};
   for (const m of d.measurements) {
+    if (isOverriddenBase91z(m)) continue;
     const key = rowKey(m);
     // A native row -- a codec compressing on its own behalf -- is shown beside
     // every stage, because the question it answers is "against a caller who
@@ -636,7 +654,7 @@ function hideTip() {
 
 // --- render -------------------------------------------------------------
 
-function label(key) { return key.replace("·", " "); }
+function label(key) { return key; }
 
 function render() {
   const rs = rows();
