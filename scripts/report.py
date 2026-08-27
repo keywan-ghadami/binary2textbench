@@ -54,6 +54,25 @@ def load(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def reported(results: dict):
+    """The measurements the report shows: one per (codec, sample, stage).
+
+    A codec that carries its own compression is measured twice at every stage --
+    once as it ships, deciding for itself at that level, and once with the
+    decision forced off and the stage's compressor in front of it like everybody
+    else. The first is the row, because it is what a caller of that codec gets.
+    Summing both, which is what iterating the measurements straight does, would
+    report a codec twice its real size.
+
+    A results.json written before the `native` field simply has no native rows,
+    so everything passes and the old shape still aggregates.
+    """
+    has_native = {m["codec"] for m in results["measurements"] if m.get("native")}
+    for m in results["measurements"]:
+        if bool(m.get("native")) == (m["codec"] in has_native):
+            yield m
+
+
 def by_category(results: dict) -> dict:
     """Aggregate to (codec, stage, category): the level a reader can act on.
 
@@ -65,7 +84,7 @@ def by_category(results: dict) -> dict:
         "input": 0, "json": 0, "raw": 0, "escapes": 0,
         "enc": 0.0, "encw": 0.0, "iqr": 0.0, "dec": 0.0,
     })
-    for m in results["measurements"]:
+    for m in reported(results):
         k = (m["codec"], m["stage"], cat[m["sample"]])
         e = out[k]
         n = m["input_bytes"]
@@ -94,9 +113,13 @@ def totals(results: dict) -> dict:
     """
     out: dict = defaultdict(lambda: {"input": 0, "json": 0, "raw": 0, "escapes": 0,
                                      "enc": 0.0, "iqr": 0.0,
-                                     "enc_ns": 0.0, "dec_ns": 0.0})
-    for m in results["measurements"]:
+                                     "enc_ns": 0.0, "dec_ns": 0.0,
+                                     "native": False})
+    for m in reported(results):
         e = out[(m["codec"], m["stage"])]
+        # Whether the stage's cost has to be added to this row, or is already
+        # inside it. Constant across a (codec, stage), by `reported`.
+        e["native"] = bool(m.get("native"))
         n = m["input_bytes"]
         e["input"] += n
         e["json"] += m["json_bytes"]
@@ -150,8 +173,8 @@ def _row(label: str, e: dict, cc: dict, base_enc: float, base_dec: float) -> dic
     the compressed intermediate answers a question nobody asked.
 
     Time counts the compression stage too, because the reader is choosing a
-    pipeline and not a subroutine. It is the same stage for every codec in the
-    table, so where it dominates every row lands near 100 % -- which is itself
+    pipeline and not a subroutine. It is the same stage for every codec in the table,
+    so where it dominates every row lands near 100 % -- which is itself
     the answer: at that setting the encoder is not what costs you time.
     """
     return {
@@ -173,21 +196,15 @@ def headline_rows(results: dict, stage: str) -> list[dict]:
     base_enc = base["enc_ns"] + cc["c"]
     base_dec = base["dec_ns"] + cc["d"]
 
-    rows = [_row(codec, e, cc, base_enc, base_dec)
+    # A codec that carries its own compression already has the stage's cost
+    # inside its measurement, so nothing is added to it; every other row has
+    # the stage added on. Both are at the stage the table is for, so the
+    # comparison is between two pipelines doing the same job at the same
+    # setting.
+    rows = [_row(codec, e, {"c": 0.0, "d": 0.0} if e["native"] else cc,
+                 base_enc, base_dec)
             for (codec, st), e in t.items()
-            # Base91z appears once, on auto, in both tables -- see below.
-            if st == stage and codec != "base91z"]
-
-    # Base91z decides for itself whether to compress, and that decision is the
-    # format. Forcing it off is an override for a caller who already knows the
-    # data is incompressible; benchmarking that would measure a configuration
-    # nobody chooses. So it appears as it ships, in both tables, and the same
-    # row in each -- which is exactly what "auto" means. Its own compression is
-    # inside its time already, so no stage cost is added to it.
-    auto = t.get(("base91z", "auto"))
-    if auto:
-        rows.append(_row("base91z (auto)", auto, {"c": 0.0, "d": 0.0},
-                         base_enc, base_dec))
+            if st == stage]
 
     rows.sort(key=lambda r: r["json"])
     return rows
@@ -208,10 +225,12 @@ def state_report(r: dict) -> list[str]:
         "the same job at the same setting, compression included: **under 100 % is "
         "faster**. Best in each column is bold.",
         "",
-        "`base91z (auto)` is the same row in both tables on purpose: it decides "
-        "for itself whether to compress, so it does not have an uncompressed "
-        "mode a caller would pick. What changes between the tables is what it is "
-        "being compared against.",
+        "`base91z` decides for itself whether to compress, so its row is the "
+        "codec as it ships, at the level each table names -- and its own "
+        "compression is inside its time already, where the other rows have the "
+        "stage added on. In the uncompressed table it is therefore the only row "
+        "that may still have compressed: that is what a caller of it gets when "
+        "they put no compressor in front.",
         "",
     ]
     for stage, title in HEADLINE_STAGES:
@@ -367,3 +386,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
