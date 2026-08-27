@@ -1,4 +1,7 @@
 corpus/data/
 runner-rust/target/
-results.json
+# The runner writes its output here. Anchored to the root on purpose:
+# site/results.json IS tracked, because Cloudflare Pages serves the page
+# straight out of the repository and cannot produce the data itself.
+/results.json
 codecs/

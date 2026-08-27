@@ -20,18 +20,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out this repository
+        uses: actions/checkout@v4
         with:
           path: binary2textbench
-      - uses: actions/checkout@v4
-        with: { repository: keywan-ghadami/base91z, path: base91z }
-      - uses: actions/checkout@v4
-        with: { repository: keywan-ghadami/base85n, path: base85n }
-      - uses: actions/checkout@v4
+
+      - name: Check out base91z
+        uses: actions/checkout@v4
+        with:
+          repository: keywan-ghadami/base91z
+          path: base91z
+
+      - name: Check out base85n
+        uses: actions/checkout@v4
+        with:
+          repository: keywan-ghadami/base85n
+          path: base85n
+
+      - name: Check out base94max
+        uses: actions/checkout@v4
         with:
           repository: keywan-ghadami/base94max
           path: base94max
-      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
       - name: Link the codecs
         working-directory: binary2textbench
         run: ./scripts/link-codecs.sh ../base91z ../base85n ../base94max
@@ -49,7 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out this repository
+        uses: actions/checkout@v4
       # Building it twice must produce the same bytes. The downloaded samples
       # are pinned by SHA-256 and the generated ones come from a counter stream,
       # so a difference here means the corpus is not reproducible and no result

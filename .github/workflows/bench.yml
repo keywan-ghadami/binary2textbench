@@ -10,6 +10,12 @@ on:
     - cron: "17 4 * * 1"
   push:
     branches: [main]
+    # The results commit this workflow makes would otherwise trigger it again,
+    # and results.json carries a timestamp so it differs on every run -- that
+    # is a loop with no fixed point. The commit message also carries [skip ci],
+    # which is what keeps the other workflows off it.
+    paths-ignore:
+      - site/results.json
   pull_request:
   workflow_dispatch:
     inputs:
@@ -35,7 +41,10 @@ on:
         default: "7"
 
 permissions:
-  contents: read
+  # Written, not just read: a scheduled run commits the results the page is
+  # served from. The step that does it runs on schedule and dispatch only --
+  # never on a pull request, where the head is not this repository's to write.
+  contents: write
   # The report is posted onto the pull request, in one comment that is
   # updated rather than added to. A fork's token stays read-only whatever
   # is asked for here, and the job carries on without the comment.
@@ -54,27 +63,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out this repository
+        uses: actions/checkout@v4
         with:
           path: binary2textbench
 
-      - uses: actions/checkout@v4
+      - name: Check out base91z
+        uses: actions/checkout@v4
         with:
           repository: keywan-ghadami/base91z
           ref: ${{ inputs.base91z_ref || 'main' }}
           path: base91z
-      - uses: actions/checkout@v4
+
+      - name: Check out base85n
+        uses: actions/checkout@v4
         with:
           repository: keywan-ghadami/base85n
           ref: ${{ inputs.base85n_ref || 'main' }}
           path: base85n
-      - uses: actions/checkout@v4
+
+      - name: Check out base94max
+        uses: actions/checkout@v4
         with:
           repository: keywan-ghadami/base94max
           ref: ${{ inputs.base94max_ref || 'main' }}
           path: base94max
 
-      - uses: ./binary2textbench
+      - name: The benchmark
+        uses: ./binary2textbench
         with:
           base91z-path: ${{ github.workspace }}/base91z
           base85n-path: ${{ github.workspace }}/base85n
@@ -83,8 +99,46 @@ jobs:
           rounds: ${{ inputs.rounds || '7' }}
           title: Six encodings on one corpus
 
-      - uses: actions/upload-artifact@v4
+      - name: Keep the results and the page
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark
           path: b2t-site/
           retention-days: 90
+
+      # Cloudflare Pages serves site/ straight out of this repository, and no
+      # build command can produce results.json -- it takes a Rust toolchain,
+      # three codec checkouts and a quiet CPU for a couple of minutes, none of
+      # which a Pages build container has or should have. So the run that
+      # produced the numbers commits them.
+      #
+      # Only the scheduled and dispatched runs: a pull request measures a
+      # proposal, and the published page should show what main measures.
+      - name: Publish the results the site is served from
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: binary2textbench
+        run: |
+          set -euo pipefail
+          cp "$GITHUB_WORKSPACE/results.json" site/results.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/results.json
+          if git diff --cached --quiet; then
+            echo "the numbers did not move; nothing to publish"
+            exit 0
+          fi
+          # [skip ci] keeps the other workflows off a commit that changes one
+          # data file; paths-ignore above keeps this one off it.
+          git commit -m "Publish the results of run ${GITHUB_RUN_ID} [skip ci]"
+          # Another run may have landed while this one was measuring, and the
+          # newer numbers are the ones to keep -- so rebase rather than force.
+          for attempt in 1 2 3; do
+            git fetch --quiet origin main
+            git rebase --quiet origin/main || { git rebase --abort; exit 1; }
+            if git push --quiet origin HEAD:main; then
+              echo "published"
+              exit 0
+            fi
+            echo "main moved under us; retrying ($attempt)"
+          done
+          echo "::warning::could not publish the results; the artifact has them"
