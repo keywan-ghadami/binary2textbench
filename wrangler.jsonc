@@ -11,7 +11,7 @@
 //   Build command:   (leave empty)
 //   Deploy command:  npx wrangler deploy
 {
-  "name": "bench",
+  "name": "binary2textbench",
   // Assets-only: no "main", because there is no Worker script to run.
   "compatibility_date": "2026-08-27",
   "assets": {
