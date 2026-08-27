@@ -130,10 +130,16 @@ def pct(new: float, old: float) -> float:
     return (new / old - 1.0) * 100.0 if old else 0.0
 
 
-# The two cases a caller actually chooses between. Every zstd level is in the
-# artifact and on the page; two tables is what fits in a comment and answers the
-# question somebody opens it with.
-HEADLINE_STAGES = (("none", "Uncompressed"), ("zstd:1", "With zstd −1 in front"))
+# The cases a caller actually chooses between, weakest first: nothing at all,
+# zstd at its fastest setting, and zstd at the everyday default. Levels 9 and 19
+# are measured too and are in the artifact and on the page -- three tables is
+# what fits in a comment while still showing how the field closes as the
+# compressor does more of the work.
+HEADLINE_STAGES = (
+    ("none", "Uncompressed"),
+    ("zstd:-5", "With zstd −5 in front (its fastest setting)"),
+    ("zstd:1", "With zstd −1 in front (the everyday default)"),
+)
 
 
 def _row(label: str, e: dict, cc: dict, base_enc: float, base_dec: float) -> dict:
