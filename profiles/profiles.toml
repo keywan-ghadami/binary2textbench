@@ -90,5 +90,4 @@ encrypted = 3
 precompressed = 3
 random = 1
 image = 1
-b64 = 1
-hex = 1
+
