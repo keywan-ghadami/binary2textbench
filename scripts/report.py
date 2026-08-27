@@ -168,16 +168,20 @@ def headline_rows(results: dict, stage: str) -> list[dict]:
     base_dec = base["dec_ns"] + cc["d"]
 
     rows = [_row(codec, e, cc, base_enc, base_dec)
-            for (codec, st), e in t.items() if st == stage]
+            for (codec, st), e in t.items()
+            # Base91z appears once, on auto, in both tables -- see below.
+            if st == stage and codec != "base91z"]
 
-    # Base91z decides for itself whether to compress, so beside a table of
-    # codecs behind a compressor it is the honest entry for what it does. Its
-    # own compression is inside its time already; nothing is added.
-    if stage != "none":
-        auto = t.get(("base91z", "auto"))
-        if auto:
-            rows.append(_row("base91z (auto)", auto, {"c": 0.0, "d": 0.0},
-                             base_enc, base_dec))
+    # Base91z decides for itself whether to compress, and that decision is the
+    # format. Forcing it off is an override for a caller who already knows the
+    # data is incompressible; benchmarking that would measure a configuration
+    # nobody chooses. So it appears as it ships, in both tables, and the same
+    # row in each -- which is exactly what "auto" means. Its own compression is
+    # inside its time already, so no stage cost is added to it.
+    auto = t.get(("base91z", "auto"))
+    if auto:
+        rows.append(_row("base91z (auto)", auto, {"c": 0.0, "d": 0.0},
+                         base_enc, base_dec))
 
     rows.sort(key=lambda r: r["json"])
     return rows
@@ -197,6 +201,11 @@ def state_report(r: dict) -> list[str]:
         "length before escaping follows in brackets. Time is against Base64 doing "
         "the same job at the same setting, compression included: **under 100 % is "
         "faster**. Best in each column is bold.",
+        "",
+        "`base91z (auto)` is the same row in both tables on purpose: it decides "
+        "for itself whether to compress, so it does not have an uncompressed "
+        "mode a caller would pick. What changes between the tables is what it is "
+        "being compared against.",
         "",
     ]
     for stage, title in HEADLINE_STAGES:
@@ -219,7 +228,7 @@ def state_report(r: dict) -> list[str]:
 
         out.append(f"**{title}**")
         out.append("")
-        out.append("| codec | size in JSON | encode | decode |")
+        out.append("| codec | size in JSON | encode speed | decode speed |")
         out.append("|---|--:|--:|--:|")
         for x, size, enc, dec in zip(rows, sizes, encs, decs):
             out.append(
