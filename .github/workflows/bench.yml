@@ -115,7 +115,7 @@ jobs:
       # Only the scheduled and dispatched runs: a pull request measures a
       # proposal, and the published page should show what main measures.
       - name: Publish the results the site is served from
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         working-directory: binary2textbench
         run: |
           set -euo pipefail
