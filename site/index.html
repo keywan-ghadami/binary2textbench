@@ -277,7 +277,7 @@ const HUE = {
   "ascii85":        "var(--s3)",
   "base85n":        "var(--s4)",
   "base94max":      "var(--s5)",
-  "base91z (auto)": "var(--s6)",
+  "base91z":        "var(--s6)",
 };
 const ORDER = Object.keys(HUE);
 
@@ -325,20 +325,18 @@ async function load() {
 
 // --- shaping ------------------------------------------------------------
 
-/** Rows are (codec, stage) pairs. Base91z's own compression decision is a row of
- *  its own rather than a stage, because it is a different thing being offered:
- *  the codec as it ships, against the others with a compressor bolted in front. */
-function rowKey(m) {
-  return m.stage === "auto" ? "base91z (auto)" : m.codec;
-}
-
-/** Base91z decides for itself whether to compress, and that decision is the
- *  format. Forcing it off is an override for a caller who already knows the
- *  data is incompressible -- never better, and listing it beside the real thing
- *  only invites the question of which one to read. The measurements are still
- *  in results.json for anyone who wants them. */
-function isOverriddenBase91z(m) {
-  return m.codec === "base91z" && m.stage !== "auto";
+/** One row per codec, at the stage the reader picked.
+ *
+ *  A codec that carries its own compression has two measurements at every
+ *  stage: the native one, which is the codec as it ships deciding for itself at
+ *  that level, and the plain one, which is the container behind the stage's
+ *  compressor like everybody else. The native one is the row, because it is
+ *  what a caller of that codec gets; forcing the decision off is an override
+ *  for someone who already knows their data is incompressible, and listing it
+ *  beside the real thing only invites the question of which one to read. Those
+ *  measurements are still in results.json, marked `native: false`. */
+function isReportedRow(m, hasNative) {
+  return hasNative.has(m.codec) ? m.native : !m.native;
 }
 
 function categoryOf(d) {
@@ -365,27 +363,25 @@ function init() {
   const compress = {};
   for (const c of d.compression) compress[c.sample + "|" + c.stage] = c;
 
+  // Which codecs carry their own compression, taken from the measurements
+  // rather than from a name written down here.
+  const hasNative = new Set(d.measurements.filter((m) => m.native).map((m) => m.codec));
+
   state.index = {};
   const entries = {};
   for (const m of d.measurements) {
-    if (isOverriddenBase91z(m)) continue;
-    const key = rowKey(m);
-    // A native row -- a codec compressing on its own behalf -- is shown beside
-    // every stage, because the question it answers is "against a caller who
-    // bolted a compressor on, how does it do".
-    const stages = m.stage === "auto" ? d.stages.filter((x) => x !== "auto") : [m.stage];
-    for (const stage of stages) {
-      const id = stage + "|" + m.sample;
-      const e = (entries[id] ??= {
-        sample: m.sample,
-        category: cat[m.sample],
-        input: m.input_bytes,
-        comp: compress[m.sample + "|" + stage] || null,
-        by: {},
-      });
-      e.by[key] = m;
-      (state.index[stage] ??= []).push(e);
-    }
+    if (!isReportedRow(m, hasNative)) continue;
+    const stage = m.stage;
+    const id = stage + "|" + m.sample;
+    const e = (entries[id] ??= {
+      sample: m.sample,
+      category: cat[m.sample],
+      input: m.input_bytes,
+      comp: compress[m.sample + "|" + stage] || null,
+      by: {},
+    });
+    e.by[m.codec] = m;
+    (state.index[stage] ??= []).push(e);
   }
   // One entry per (stage, sample), not one per measurement.
   for (const stage of Object.keys(state.index)) {
@@ -459,7 +455,6 @@ function buildStages() {
   const sel = $("#stage");
   sel.innerHTML = "";
   for (const s of state.data.stages) {
-    if (s === "auto") continue;   // shown as its own row, not as a stage
     const o = document.createElement("option");
     o.value = s;
     o.textContent = s === "none" ? "none" : s.replace("zstd:", "zstd ");
@@ -479,17 +474,17 @@ function buildStages() {
  *  * A plain codec at a stage, timed without the compression stage, already has
  *    a per-round ratio against Base64 measured beside it. That is the stable
  *    figure and it is used as it stands.
- *  * Once the compression stage is counted, or for a native row -- Base91z
+ *  * Once the compression stage is counted, or for a native row -- a codec
  *    deciding its own compression, whose measured ratio is against Base64 over
- *    the *uncompressed* input -- the ratio has to be rebuilt from absolute
- *    times so that both sides describe the same pipeline. Less stable, and
- *    honest, which is the right way round.
+ *    the *compressed* input -- the ratio has to be rebuilt from absolute times
+ *    so that both sides describe the same pipeline. Less stable, and honest,
+ *    which is the right way round.
  */
 function timeOf(entry, key) {
   const m = entry.by[key];
   const base = entry.by["base64"];
   if (!m || !base) return null;
-  const native = m.stage === "auto";
+  const native = m.native;
 
   const pick = (x) => (state.dir === "encode" ? x.encode : x.decode);
   const pickRel = (x) => (state.dir === "encode" ? x.encode_rel : x.decode_rel);
@@ -524,9 +519,11 @@ function aggregate(key) {
   if (!entries) return null;
 
   const perCat = {};
+  let native = false;
   for (const e of entries) {
     const m = e.by[key];
     if (!m) continue;
+    native = m.native;
     const t = timeOf(e, key);
     if (!t) continue;
     const c = (perCat[e.category] ??= {
@@ -555,7 +552,7 @@ function aggregate(key) {
     iqrAcc += w * (c.iqrW / c.input);
   }
   if (!wSum) return null;
-  return { key, size: sizeAcc / wSum, rel: relAcc / wSum, iqr: iqrAcc / wSum, perCat: out };
+  return { key, native, size: sizeAcc / wSum, rel: relAcc / wSum, iqr: iqrAcc / wSum, perCat: out };
 }
 
 function rows() {
@@ -716,10 +713,17 @@ function sizeTip(r, base) {
 }
 
 function speedTip(r) {
+  // A codec that compresses on its own behalf cannot have that subtracted: it
+  // is one call, and "codec only" has nothing to take off it. Said here rather
+  // than left for a reader to infer from a number that looks out of line.
+  const carried = r.native && !state.total
+    ? `<br><span class="k">note:</span> compression is inside this codec,<br>` +
+      `so this figure carries it either way`
+    : "";
   return `<b>${label(r.key)}</b><br>` +
     `<span class="k">${state.dir}, vs Base64:</span> ${fmt(r.rel, 3)}×<br>` +
     `<span class="k">spread (IQR):</span> ±${fmt(r.iqr / 2, 3)}×<br>` +
-    `<span class="k">rounds:</span> ${state.data.meta.rounds}`;
+    `<span class="k">rounds:</span> ${state.data.meta.rounds}` + carried;
 }
 
 /** Two figures are called tied when the gap between them is inside the noise

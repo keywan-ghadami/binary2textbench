@@ -29,9 +29,33 @@ reported too, and the gap between them is the escaping.
 
 Compression is zstd at `-5`, `1`, `9` and `19`, plus no compression at all as
 its own row — for a short payload or an incompressible one, none is what a
-caller should actually do, and the report should be able to say so. Base91z
-also appears as `auto`, deciding for itself, because that is how it ships and
-no caller of it has the other configuration.
+caller should actually do, and the report should be able to say so.
+
+**The compression setting applies to every row, including the ones that carry
+their own.** Base91z decides per payload whether to compress; picking `zstd 9`
+tells it to decide at level 9, exactly as it tells the other five codecs to run
+level 9 in front of them. Picking `none` puts no compressor in front of
+anybody, and Base91z then uses its own default — which is what a caller who
+passes no level gets from it. So there is one row per codec and the dropdown
+means one thing.
+
+Forcing Base91z's decision off and running it behind an external compressor
+like the others is measured too, and is in `results.json` marked
+`native: false`. It is not a row on the page: it is an override for a caller
+who already knows their data is incompressible, and putting it beside the real
+thing only invites the question of which one to read.
+
+**The compression stage is measured with a context a caller would reuse.**
+`zstd::bulk::compress` and `zstd::bulk::decompress` build a `ZSTD_CCtx` or
+`ZSTD_DCtx`, use it once and drop it, and on a field-sized payload that setup
+*is* the measurement — 14 µs to decompress a 92-byte record that takes 27 ns
+with the context kept, and 55 of the 88 samples are under 200 bytes. Since the
+site adds the stage cost to both sides of every ratio, an enormous constant
+drags every codec's figure towards 1.0 and hides what the codecs differ by. So
+the runner keeps one decompressor for the whole run and one compressor per
+level, for the same reason there is one JSON escaper: what should differ
+between codecs is how much work they hand the thing around them, not how well
+someone optimised it.
 
 ## Numbers from a noisy machine
 
