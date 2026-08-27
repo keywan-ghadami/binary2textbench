@@ -320,6 +320,21 @@ async function load() {
     return;
   }
   state.data = JSON.parse(text);
+  // Which row belongs to a codec that carries its own compression is a field
+  // in the measurements now, not a stage called "auto". A results.json from
+  // before that would still render -- as the container behind an external
+  // compressor, which is exactly the row this page is not supposed to show --
+  // so say so rather than serve a plausible wrong answer.
+  const ms = state.data.measurements || [];
+  if (ms.length && ms[0].native === undefined) {
+    $("#error").innerHTML =
+      "<p><strong>This results.json predates this page.</strong> It has no " +
+      "<code>native</code> field, so the row for a codec that compresses on " +
+      "its own behalf cannot be told from the one measured behind the " +
+      "compression stage. Rerun the benchmark: <code>cd runner-rust &amp;&amp; " +
+      "cargo run --release</code>, or take the artifact from a current CI run.</p>";
+    return;
+  }
   init();
 }
 
