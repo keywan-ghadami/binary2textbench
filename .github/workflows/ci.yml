@@ -57,6 +57,19 @@ jobs:
         working-directory: binary2textbench/runner-rust
         run: cargo clippy --all-targets --release -- -D warnings
 
+      # The benchmark measures Base91z through `encode_at`, its cheap decision,
+      # rather than `encode_auto`, which reaches the same answer by building
+      # both candidates at an order of magnitude the cost. Measuring the cheap
+      # one is only honest while it also picks the same candidate, so that is
+      # checked rather than assumed.
+      - name: Base91z's cheap decision still matches its reference one
+        working-directory: binary2textbench
+        run: |
+          set -euo pipefail
+          python3 corpus/manifest.py --groups=core,short
+          cd runner-rust
+          cargo run --release --example agree -- ../corpus/data/manifest.json
+
   corpus:
     name: The corpus reproduces
     runs-on: ubuntu-latest

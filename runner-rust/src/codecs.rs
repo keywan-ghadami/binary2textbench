@@ -106,10 +106,22 @@ pub fn all() -> Vec<Codec> {
             native: Some(NativePath {
                 label: "auto",
                 note: "Base91z choosing its own compression, at its own default level",
-                // DEFAULT_LEVEL is what a caller who does not pass a level gets,
-                // so it is what "as it ships" means.
-                encode: |d| base91z::encode_auto(d, base91z::DEFAULT_LEVEL)
-                    .expect("base91z encode_auto"),
+                // `encode_at`, not `encode_auto`. Both decide for themselves
+                // whether to compress and they agree on the corpus, but
+                // `encode_auto` reaches the decision by building *both*
+                // candidates and keeping the shorter -- which its own
+                // documentation says "costs an order of magnitude", because the
+                // uncompressed candidate runs the scan over data the scan has
+                // plenty to find in. `encode_at` takes one histogram over a
+                // kilobyte and builds only the candidate that names. That is
+                // the path a caller gets, so it is the one to measure;
+                // `encode_auto` is the reference the decision is checked
+                // against, not a configuration anybody ships.
+                //
+                // DEFAULT_LEVEL is what a caller who does not pass a level
+                // gets, so it is what "as it ships" means.
+                encode: |d| base91z::encode_at(d, base91z::DEFAULT_LEVEL)
+                    .expect("base91z encode_at"),
                 decode: |s| base91z::decode(s).map_err(|e| CodecError(format!("{e:?}"))),
             }),
         },
