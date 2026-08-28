@@ -5,8 +5,13 @@
 
 """results.json, rewritten at the grain it is read.
 
+    python3 scripts/compact.py results.json            # in place
     python3 scripts/compact.py results.json -o site/results.json
     python3 scripts/compact.py results.json --check
+
+report.py takes either shape and converts what it is given, so nothing has to
+be run in between. This exists for the file that ships with the page, which
+wants to be small on disk.
 
 The runner writes one row per (sample, codec, stage): eighty-eight samples over
 six codecs and five stages is three thousand and eighty rows, and 1.5 MB.
@@ -215,9 +220,10 @@ def shape(d: dict) -> dict:
     The only place in Python that knows the row layout. `pair` is the
     (group, category) key both readers weight by.
     """
-    if d.get("v") != FORMAT:
-        sys.exit("this results.json is in the runner's per-sample shape. "
-                 "Convert it first: python3 scripts/compact.py <file> -o <file>")
+    # The runner's per-sample shape is accepted and converted here. Refusing it
+    # and printing a command for a human to run would be asking someone to do
+    # by hand what this module is already holding the function for.
+    d = compact(d)
 
     g, c, st, kd = d["groups"], d["categories"], d["stages"], d["codecs"]
 
@@ -279,16 +285,22 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("path", type=Path)
-    ap.add_argument("-o", "--out", type=Path, default=None)
+    ap.add_argument("-o", "--out", type=Path, default=None,
+                    help="write here instead of over the input file")
+    ap.add_argument("--stdout", action="store_true",
+                    help="write to standard output and leave the file alone")
     ap.add_argument("--check", action="store_true",
                     help="recompute every cell straight from the source rows "
-                         "and compare")
+                         "and compare, without writing anything")
     ap.add_argument("--indent", type=int, default=None)
     args = ap.parse_args()
 
     src = json.loads(args.path.read_text())
 
     if args.check:
+        if src.get("v") == FORMAT:
+            sys.exit(f"{args.path} is already converted; --check needs the "
+                     f"runner's per-sample output to compare against.")
         import verify
         bad = verify.check(src, compact(src))
         if bad:
@@ -299,15 +311,32 @@ def main() -> None:
         print("clean")
         return
 
-    out = compact(src)
-    text = json.dumps(out, indent=args.indent,
-                      separators=(",", ":") if args.indent is None else None)
-    if args.out:
-        args.out.write_text(text + "\n")
-        b, a = args.path.stat().st_size, args.out.stat().st_size
-        print(f"{b:,} -> {a:,} bytes ({a / b * 100:.1f} %)", file=sys.stderr)
+    if src.get("v") == FORMAT and not args.out and not args.stdout:
+        print(f"{args.path} is already in this shape; nothing to do.",
+              file=sys.stderr)
+        return
+
+    text = json.dumps(compact(src), indent=args.indent,
+                      separators=(",", ":") if args.indent is None else None) + "\n"
+
+    if args.stdout:
+        sys.stdout.write(text)
+        return
+
+    # Overwriting the input is the ordinary case, so it is the default. Written
+    # to a neighbour and moved into place: a crash halfway through must not be
+    # able to leave a truncated results.json where a good one was.
+    target = args.out or args.path
+    before = target.stat().st_size if target.exists() else 0
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(target)
+    after = target.stat().st_size
+    if before:
+        print(f"{target}: {before:,} -> {after:,} bytes "
+              f"({after / before * 100:.1f} %)", file=sys.stderr)
     else:
-        sys.stdout.write(text + "\n")
+        print(f"{target}: {after:,} bytes", file=sys.stderr)
 
 
 if __name__ == "__main__":
