@@ -18,7 +18,6 @@
   --grid:       #e1e0d9;
   --axis:       #c3c2b7;
   --bar:        #2a78d6;
-  --bar-soft:   #9ec5f4;
   --baseline:   #52514e;
   --good:       #0ca30c;
   --critical:   #d03b3b;
@@ -36,7 +35,6 @@
     --grid:     #2c2c2a;
     --axis:     #383835;
     --bar:      #3987e5;
-    --bar-soft: #184f95;
     --baseline: #c3c2b7;
     --good:     #0ca30c;
     --critical: #d03b3b;
@@ -54,7 +52,6 @@
   --grid:     #2c2c2a;
   --axis:     #383835;
   --bar:      #3987e5;
-  --bar-soft: #184f95;
   --baseline: #c3c2b7;
   --good:     #0ca30c;
   --critical: #d03b3b;
@@ -120,7 +117,7 @@ details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-
 svg { display: block; max-width: 100%; }
 .bar-label {
   fill: var(--ink); font-size: 12px; font-weight: 600;
-  /* The Base64 marker runs behind these, and a dashed line through a digit is
+  /* The baseline marker runs behind these, and a dashed line through a digit is
      the kind of thing that makes a reader distrust the number. A halo in the
      surface colour knocks the line out from under the text. */
   paint-order: stroke;
@@ -154,7 +151,7 @@ td.num { font-variant-numeric: tabular-nums; }
   background: var(--surface); color: var(--ink);
   border: 1px solid var(--axis); border-radius: 7px;
   padding: 8px 11px; font-size: 0.8rem; line-height: 1.45;
-  box-shadow: 0 6px 22px rgba(0,0,0,.18); max-width: 300px; z-index: 20;
+  box-shadow: 0 6px 22px rgba(0,0,0,.18); max-width: 320px; z-index: 20;
 }
 #tip b { font-weight: 600; }
 #tip .k { color: var(--muted); }
@@ -171,8 +168,8 @@ td.num { font-variant-numeric: tabular-nums; }
 <div class="wrap">
 
 <h1>binary2textbench</h1>
-<p class="lede">Six binary-to-text encodings, one corpus, one process. Every speed
-figure is divided by a Base64 figure measured beside it; sizes are exact.
+<p class="lede">Binary-to-text encodings, one corpus, one process. Every speed
+figure is divided by a baseline figure measured beside it; sizes are exact.
 <strong>Weight the corpus the way your traffic actually looks</strong> — the
 ranking is a claim about whose data is being encoded, and only you know that.</p>
 <p class="sub" id="provenance">loading…</p>
@@ -221,7 +218,9 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
   <details class="weights">
     <summary>Weights per corpus category — move them</summary>
     <p class="note">Only the ratios matter. A category at zero is still measured,
-    just not counted.</p>
+    just not counted. Where the same category appears in more than one corpus
+    group it is listed once per group, so short samples can be weighted apart
+    from large ones.</p>
     <div class="wgrid" id="weights"></div>
     <p><button type="button" id="reset-weights">Reset to profile</button></p>
   </details>
@@ -231,11 +230,11 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
   <div class="card">
     <h2>Size</h2>
     <!-- Both sub-headings are written by render(): they describe the current
-         control state, so a copy sitting in the markup would be a second
-         wording of the same thing that goes stale the moment the two drift. -->
+         control state, so a copy in the markup would be a second wording that
+         goes stale the moment the two drift. -->
     <h3 id="size-sub"></h3>
     <div class="chart-scroll"><svg id="chart-size" role="img"></svg></div>
-    <p class="note">The dashed line is Base64.</p>
+    <p class="note">The dashed line is the baseline codec.</p>
   </div>
   <div class="card">
     <h2>Speed</h2>
@@ -275,30 +274,61 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
 <script>
 "use strict";
 
-// Colour follows the entity, never its rank: a codec keeps its hue when the
-// sort order changes or a filter drops one of its neighbours.
-const HUE = {
-  "base64":         "var(--s1)",
-  "base91-classic": "var(--s2)",
-  "ascii85":        "var(--s3)",
-  "base85n":        "var(--s4)",
-  "base94max":      "var(--s5)",
-  "base91z":        "var(--s6)",
-};
-const ORDER = Object.keys(HUE);
+// --- copy -----------------------------------------------------------------
+// results.json carries measurements and weights. Words for a person to read
+// live here, beside the thing that renders them: they change without any
+// measurement changing, and a measurement file is regenerated on every run.
+// Anything the file names and this does not know falls back to the raw id, so
+// adding a codec or a profile in the runner shows up rather than breaking.
 
-// What a profile is called and what it means. results.json carries the weights
-// and nothing else: a label is copy, it changes without any measurement
-// changing, and it belongs with the thing that renders it. A profile the file
-// has that this map does not falls back to its own name, so adding one in the
-// runner shows up here immediately rather than breaking.
+const CODEC_NOTE = {
+  "base64": "RFC 4648, the baseline every ratio is against",
+  "base91-classic": "basE91 (Henke, 2005); its alphabet contains a quote and a backslash",
+  "ascii85": "Ascii85 with the z shortcut, no delimiters",
+  "base85n": "Base85N 0.5.x, JSON-safe alphabet",
+  "base94max": "Base94Max, adaptive 13/14-bit over all printable ASCII",
+  "base91z": "Base91z as it ships: it decides per payload whether to compress, at the level the stage names",
+};
+
 const PROFILE_TEXT = {
-  even: {
-    label: "Everything, evenly",
-    note: "Every category counts the same. A reasonable place to start, and a " +
-          "claim about your traffic that is almost certainly wrong.",
+  balanced: {
+    label: "Balanced",
+    note: "Everything the corpus holds, counted evenly. The default, and the one to distrust: no real system's traffic looks like this.",
+  },
+  binary: {
+    label: "Binary data",
+    note: "Container formats, executables, fonts, images, archives. No text structure to exploit, but plenty of internal redundancy for a compressor to find.",
+  },
+  dense_problem_chars: {
+    label: "Many problematic characters",
+    note: "Text so peppered with untransportable bytes that escaping it in place would be worse than encoding it outright. Where a binary-to-text encoding stops being a fallback and becomes the obvious choice.",
+  },
+  incompressible: {
+    label: "Compressed or random data",
+    note: "Session identifiers, ciphertext, already-compressed blobs, and pure noise. A compression stage in front of the encoder earns nothing here, so the encoding is on its own — and this is exactly the traffic that reaches for one.",
+  },
+  mixed_content: {
+    label: "Mixed content",
+    note: "One envelope carrying several kinds of thing at once: structured text, source, a binary attachment. What a real message tends to hold, and the case where an encoding cannot specialise its way out.",
+  },
+  sparse_problem_chars: {
+    label: "A few problematic characters",
+    note: "Text that is almost all plain ASCII with the occasional byte that breaks it — a log line with a stray control character, a field with one byte of raw UTF-8 gone wrong. The case where escaping in place might still have been cheaper, and the report should be able to say whether it was.",
   },
 };
+
+// Colour follows the entity, never its rank: a codec keeps its hue when the
+// sort order changes or a filter drops one of its neighbours. A codec this map
+// does not know takes the next slot rather than rendering invisible.
+const HUE = {
+  "base64": "var(--s1)",
+  "base91-classic": "var(--s2)",
+  "ascii85": "var(--s3)",
+  "base85n": "var(--s4)",
+  "base94max": "var(--s5)",
+  "base91z": "var(--s6)",
+};
+const SPARE = ["var(--s7)", "var(--s3)", "var(--s5)", "var(--s2)"];
 
 /** A stage id as a label. The level is read out of the id rather than written
  *  down beside it, because a hand-written label is one that can say -1 over
@@ -310,35 +340,27 @@ function stageLabel(s) {
   return kind === "zstd" && level ? "zstd " + level.replace("-", "\u2212") : s;
 }
 
-// Fallback for SPEED_FLOOR in scripts/report.py, used when a results.json does
-// not carry the value. The two have to agree: a run that the comment calls no
-// change and the page calls a clear winner is a run nobody can act on. Best
-// fixed by having the runner write meta.speed_floor, which this prefers.
+// Fallback for SPEED_FLOOR in scripts/report.py, used when results.json does
+// not carry the value. The two have to agree: a run the comment calls no change
+// and the page calls a clear winner is a run nobody can act on.
 const SPEED_FLOOR = 0.08;
 
 const state = {
-  data: null,
-  profile: null,
-  stage: "zstd:1",
-  size: "json",
-  dir: "encode",
-  total: true,
-  weights: {},
-  categories: [],
+  data: null, shaped: null, profile: null, stage: null,
+  size: "json", dir: "encode", total: true,
+  weights: {}, pairs: [], label: {}, index: {}, hue: {},
 };
 
 const $ = (s) => document.querySelector(s);
-const fmt = (n, d = 4) => Number(n).toFixed(d);
+const fmt = (n, d = 3) => Number(n).toFixed(d);
 
 // Sizes are per cent of the input everywhere on this page, because that is the
-// unit the pull-request comment prints and a reader who has both open should
-// not be converting between them. One decimal is also all the precision the
-// comparison survives: 0.7419 invited a reader to separate two encodings on a
-// difference that is below what anyone will ever notice in a payload.
+// unit the pull-request comment prints and a reader with both open should not
+// be converting between them.
 const pctSize = (v) => (v * 100).toFixed(1) + " %";
-const speedText = (v) => fmt(v, 2) + "×";
+const speedText = (v) => fmt(v, 2) + "\u00d7";
 
-// --- load ---------------------------------------------------------------
+// --- load -----------------------------------------------------------------
 
 async function load() {
   // Beside the page is where CI puts it; one level up is where a local run
@@ -353,98 +375,122 @@ async function load() {
     } catch (e) { err = e; }
   }
   if (text === undefined) {
-    const e = err;
     $("#error").innerHTML =
       "<p><strong>No results.json beside this page.</strong> Generate one with " +
-      "<code>cd runner-rust &amp;&amp; cargo run --release</code>, or download the " +
-      "artifact from a CI run and put it next to this file. " +
+      "<code>cd runner-rust &amp;&amp; cargo run --release</code>, then " +
+      "<code>python3 scripts/compact.py results.json -o site/results.json</code>. " +
       "(Opening over <code>file://</code> may also need a local server: " +
-      "<code>python3 -m http.server</code>.)</p><p class='sub'>" + e + "</p>";
+      "<code>python3 -m http.server</code>.)</p><p class='sub'>" + err + "</p>";
     return;
   }
-  state.data = expand(JSON.parse(text));
-  // A file from before the format change still has per-sample measurements and
-  // no cells. Converting one in the browser would mean shipping the whole
-  // converter for a case that only comes up on an old artifact, so say what to
-  // do instead of half-rendering.
-  if (!state.data.cells) {
+  const d = JSON.parse(text);
+  if (d.v !== 4) {
+    // Converting the runner's per-sample output in the browser would mean
+    // shipping the converter for a case that only arises on an old artifact.
     $("#error").innerHTML =
-      "<p><strong>This results.json predates this page.</strong> It holds " +
-      "per-sample measurements rather than the sums per codec, stage and " +
-      "category that this page reads. Convert it with <code>python3 " +
-      "scripts/compact.py results.json -o results.json</code>, or take the " +
-      "artifact from a current CI run.</p>";
+      "<p><strong>This results.json is not in the shape this page reads.</strong> " +
+      "It holds per-sample measurements rather than sums per codec, stage, group " +
+      "and category. Convert it: <code>python3 scripts/compact.py results.json " +
+      "-o site/results.json</code>.</p>";
     return;
   }
-
+  state.data = d;
   init();
 }
 
-// --- shaping ------------------------------------------------------------
+// --- shaping --------------------------------------------------------------
 
-/** The columns of one cell, resolved.
+/** results.json as named objects, indexes resolved.
  *
- *  results.json holds sums per (codec, stage, category) rather than one row
- *  per sample -- see scripts/compact.py for why, and for the ratios below,
- *  which were formed per sample there and only then summed. Dividing a
- *  weighted sum by its bytes here gives back exactly the figure this page used
- *  to compute for itself.
+ *  The only place on this page that knows the row layout. Columns are read
+ *  through the *_cols lists rather than assumed, so a file with an extra column
+ *  still opens. See scripts/compact.py for what each column is and why the
+ *  per-sample rows are not here.
  */
-function cellsOf(d) {
-  const ix = {};
-  d.cell_cols.forEach((c, i) => { ix[c] = i; });
-  return d.cells.map((r) => {
-    const e = {};
-    for (const c of d.cell_cols) e[c] = r[ix[c]];
-    e.codec = d.codecs[e.codec];
-    e.stage = d.stages[e.stage];
-    e.cat = d.categories[e.cat];
-    e.native = !!e.native;
+function shape(d) {
+  const rows = (colsKey, rowsKey) => {
+    const cols = d[colsKey];
+    return d[rowsKey].map((r) => {
+      const o = {};
+      cols.forEach((c, i) => { o[c] = i < r.length ? r[i] : null; });
+      return o;
+    });
+  };
+  const pairKey = (g, c) => d.groups[g] + "/" + d.categories[c];
+
+  const corpus = {};
+  for (const r of rows("corpus_cols", "corpus")) {
+    corpus[pairKey(r.grp, r.cat)] = {
+      grp: d.groups[r.grp], cat: d.categories[r.cat],
+      samples: r.samples, bytes: r.bytes,
+    };
+  }
+
+  const cells = rows("cell_cols", "cells").map((r) => {
+    const pair = pairKey(r.grp, r.cat);
+    const e = Object.assign({}, r, {
+      codec: d.codecs[r.codec],
+      stage: d.stages[r.stage],
+      grp: d.groups[r.grp],
+      cat: d.categories[r.cat],
+      pair: pair,
+      native: !!r.native,
+      input: corpus[pair].bytes,
+      json: r.raw + r.esc,
+    });
+    // Absent means "the same as measured"; only a self-compressing codec
+    // differs, so only its rows carry these.
+    if (e.enc_cod === null || e.enc_cod === undefined) e.enc_cod = e.enc_raw;
+    if (e.dec_cod === null || e.dec_cod === undefined) e.dec_cod = e.dec_raw;
     return e;
   });
+
+  return { corpus: corpus, cells: cells };
 }
 
-/** Which of the stored ratios the controls are currently asking for.
- *
- *  `cod` is the codec on its own, `tot` counts the compression stage. `raw`,
- *  the ratio as the runner measured it, is what the pull-request comment uses;
- *  it differs from `cod` only for a codec that carries its own compression,
- *  and this page shows such a codec as it ships, so it wants `cod`.
- */
-function modeCols() {
-  const d = state.dir === "encode" ? "enc" : "dec";
-  const m = state.total ? "tot" : "cod";
-  return { w: `${d}_${m}_w`, q: `${d}_${m}_q` };
+/** The category alone where it is unambiguous, `group/category` where the same
+ *  category sits in two groups. scripts/report.py labels them the same way. */
+function pairLabels(corpus) {
+  const groupsOf = {};
+  for (const p of Object.values(corpus)) {
+    (groupsOf[p.cat] ??= new Set()).add(p.grp);
+  }
+  const out = {};
+  for (const [key, p] of Object.entries(corpus)) {
+    out[key] = groupsOf[p.cat].size === 1 ? p.cat : p.grp + "/" + p.cat;
+  }
+  return out;
 }
 
-/** One row per codec, at the stage the reader picked.
- *
- *  A codec that carries its own compression has two cells at every stage: the
- *  native one, which is the codec as it ships deciding for itself at that
- *  level, and the plain one, which is the container behind the stage's
- *  compressor like everybody else. The native one is the row, because it is
- *  what a caller of that codec gets; forcing the decision off is an override
- *  for someone who already knows their data is incompressible, and listing it
- *  beside the real thing only invites the question of which one to read. That
- *  cell is still in the file, marked `native: false`.
- */
-function isReportedRow(c, hasNative) {
-  return hasNative.has(c.codec) ? c.native : !c.native;
+/** `{cat}_{group}` before `{cat}`. That is what lets `balanced` weight
+ *  `binary_short` apart from `binary`; without the group there was nothing for
+ *  that weight to attach to. */
+function weightOf(profile, grp, cat) {
+  if (!profile) return 1;
+  for (const k of [cat + "_" + grp, cat]) {
+    if (k in profile) return Number(profile[k]) || 0;
+  }
+  return 0;
+}
+
+function speedFloor() {
+  const v = Number(state.data.meta.speed_floor);
+  return Number.isFinite(v) && v > 0 ? v : SPEED_FLOOR;
 }
 
 function init() {
   const d = state.data;
+  state.shaped = shape(d);
+  state.label = pairLabels(state.shaped.corpus);
+  state.pairs = Object.keys(state.shaped.corpus);
 
-  // Categories in file order, so related ones stay together.
-  state.categories = d.categories.slice();
+  state.hue = {};
+  d.codecs.forEach((name, i) => {
+    state.hue[name] = HUE[name] || SPARE[i % SPARE.length];
+  });
 
-  const cells = cellsOf(d);
-  const hasNative = new Set(cells.filter((c) => c.native).map((c) => c.codec));
   state.index = {};
-  for (const c of cells) {
-    if (!isReportedRow(c, hasNative)) continue;
-    (state.index[c.stage] ??= []).push(c);
-  }
+  for (const c of state.shaped.cells) (state.index[c.stage] ??= []).push(c);
 
   buildProfiles();
   buildStages();
@@ -456,16 +502,16 @@ function buildProfiles() {
   const profiles = state.data.profiles || {};
   const sel = $("#profile");
   sel.innerHTML = "";
-  const names = Object.keys(profiles);
-  for (const name of names) {
+  for (const name of Object.keys(profiles)) {
     const o = document.createElement("option");
     o.value = name;
     o.textContent = (PROFILE_TEXT[name] || {}).label || name;
     sel.append(o);
   }
-  if (!names.length) {
+  if (!sel.options.length) {
     const o = document.createElement("option");
-    o.value = "__even"; o.textContent = "Everything, evenly";
+    o.value = "__even";
+    o.textContent = "Everything, evenly";
     sel.append(o);
   }
   state.profile = sel.value;
@@ -476,8 +522,9 @@ function buildProfiles() {
 function applyProfile() {
   const p = (state.data.profiles || {})[state.profile];
   state.weights = {};
-  for (const c of state.categories) {
-    state.weights[c] = p ? Number(p[c] || 0) : 1;
+  for (const key of state.pairs) {
+    const c = state.shaped.corpus[key];
+    state.weights[key] = p ? weightOf(p, c.grp, c.cat) : 1;
   }
   $("#profile-note").textContent = (PROFILE_TEXT[state.profile] || {}).note || "";
 }
@@ -485,16 +532,18 @@ function applyProfile() {
 function buildWeightControls() {
   const box = $("#weights");
   box.innerHTML = "";
-  for (const c of state.categories) {
+  for (const key of state.pairs) {
+    const id = key.replace(/[^a-z0-9]/gi, "_");
     const row = document.createElement("div");
     row.className = "wrow";
     row.innerHTML =
-      `<label for="w-${c}">${c}</label>` +
-      `<span class="val" id="wv-${c}">${state.weights[c]}</span>` +
-      `<input type="range" id="w-${c}" min="0" max="10" step="0.5" value="${state.weights[c]}">`;
+      `<label for="w-${id}">${state.label[key]}</label>` +
+      `<span class="val" id="wv-${id}">${state.weights[key]}</span>` +
+      `<input type="range" id="w-${id}" min="0" max="10" step="0.5" ` +
+      `value="${state.weights[key]}">`;
     row.querySelector("input").addEventListener("input", (e) => {
-      state.weights[c] = Number(e.target.value);
-      $("#wv-" + c).textContent = state.weights[c];
+      state.weights[key] = Number(e.target.value);
+      $("#wv-" + id).textContent = state.weights[key];
       render();
     });
     box.append(row);
@@ -502,9 +551,13 @@ function buildWeightControls() {
 }
 
 function syncWeightControls() {
-  for (const c of state.categories) {
-    const el = $("#w-" + c);
-    if (el) { el.value = state.weights[c]; $("#wv-" + c).textContent = state.weights[c]; }
+  for (const key of state.pairs) {
+    const id = key.replace(/[^a-z0-9]/gi, "_");
+    const el = $("#w-" + id);
+    if (el) {
+      el.value = state.weights[key];
+      $("#wv-" + id).textContent = state.weights[key];
+    }
   }
 }
 
@@ -517,51 +570,64 @@ function buildStages() {
     o.textContent = stageLabel(s);
     sel.append(o);
   }
-  if (!state.data.stages.includes(state.stage)) state.stage = state.data.stages[0];
-  sel.value = state.stage;
+  const want = state.data.stages.includes("zstd:1") ? "zstd:1" : state.data.stages[0];
+  state.stage = want;
+  sel.value = want;
 }
 
-// --- aggregation --------------------------------------------------------
+// --- aggregation ----------------------------------------------------------
 
-/** One row of the report: the weighted figures for one codec at one stage.
+/** Which stored ratio the controls are currently asking for.
  *
- *  Size is a ratio of sums per category, then a weighted mean of those -- not a
- *  mean of per-file ratios, which would let a small sample outvote a large one
- *  inside its own category. Speed was weighted by input bytes when the file was
- *  written, and is weighted across categories by the profile here.
+ *  `cod` is the codec on its own, `tot` counts the compression stage. Both were
+ *  formed per sample by the converter and only then summed, because forming
+ *  them from sums here would be a different number. `_q` is the interquartile
+ *  range that goes with each; the codec-only view shares the measured one.
  */
-function aggregate(key) {
+function modeCols() {
+  const d = state.dir === "encode" ? "enc" : "dec";
+  return state.total
+    ? { w: d + "_tot", q: d + "_tot_q" }
+    : { w: d + "_cod", q: d + "_q" };
+}
+
+/** The weighted figures for one codec at one stage.
+ *
+ *  Size is a ratio of sums within a category, then a weighted mean of those --
+ *  not a mean of per-file ratios, which would let a small sample outvote a
+ *  large one inside its own category.
+ */
+function aggregate(codec) {
   const cells = state.index[state.stage];
   if (!cells) return null;
   const { w, q } = modeCols();
 
   let wSum = 0, sizeAcc = 0, relAcc = 0, iqrAcc = 0, native = false;
-  const out = {};
+  const perCat = {};
   for (const c of cells) {
-    if (c.codec !== key || !c.input) continue;
+    if (c.codec !== codec || !c.input) continue;
     native = c.native;
     const size = (state.size === "json" ? c.json : c.raw) / c.input;
-    const rel = c[w] / c.input;
-    out[c.cat] = { size: size, rel: rel, escapes: c.esc, input: c.input };
-    const weight = state.weights[c.cat] || 0;
+    perCat[c.pair] = { size: size, rel: c[w], escapes: c.esc, input: c.input };
+    const weight = state.weights[c.pair] || 0;
     if (weight <= 0) continue;
     wSum += weight;
     sizeAcc += weight * size;
-    relAcc += weight * rel;
-    iqrAcc += weight * (c[q] / c.input);
+    relAcc += weight * c[w];
+    iqrAcc += weight * c[q];
   }
   if (!wSum) return null;
-  return { key: key, native: native, size: sizeAcc / wSum, rel: relAcc / wSum,
-           iqr: iqrAcc / wSum, perCat: out };
+  return { key: codec, native: native, size: sizeAcc / wSum,
+           rel: relAcc / wSum, iqr: iqrAcc / wSum, perCat: perCat };
 }
 
 function rows() {
-  return ORDER.map(aggregate).filter(Boolean);
+  return state.data.codecs.map(aggregate).filter(Boolean);
 }
 
-// --- charts -------------------------------------------------------------
+// --- charts ---------------------------------------------------------------
 
-const PAD = { l: 118, r: 82, t: 8, b: 30 };
+const PAD = { l: 128, r: 82, t: 8, b: 30 };
 const BAR = 22, GAP = 12;
 
 function barChart(svgId, data, opts) {
@@ -573,11 +639,11 @@ function barChart(svgId, data, opts) {
   svg.setAttribute("height", h);
   svg.setAttribute("aria-label", opts.title);
   const iw = w - PAD.l - PAD.r;
-  const max = Math.max(...data.map((d) => d.value + (d.err || 0)), opts.marker || 0) * 1.08;
+  const max = Math.max(...data.map((d) => d.value + (d.err || 0)),
+                       opts.marker || 0) * 1.08;
   const x = (v) => PAD.l + (v / max) * iw;
 
   const parts = [];
-  // Recessive grid: four ticks, hairline, behind everything.
   const ticks = 4;
   for (let i = 0; i <= ticks; i++) {
     const v = (max / ticks) * i;
@@ -592,26 +658,20 @@ function barChart(svgId, data, opts) {
     const y = PAD.t + i * (BAR + GAP);
     const len = Math.max(x(d.value) - PAD.l, 2);
     // 4px rounded data-end anchored to the baseline: rounded on the far side
-    // only, achieved by drawing past the axis and clipping with the axis line.
+    // only, by drawing past the axis and squaring the near end back off.
     parts.push(
-      `<rect class="hit" x="0" y="${y - GAP / 2}" width="${w}" height="${BAR + GAP}"
-         data-i="${i}"/>`,
-      `<rect x="${PAD.l}" y="${y}" width="${len}" height="${BAR}" rx="4" ry="4"
-         fill="${d.color}"/>`,
-      `<rect x="${PAD.l}" y="${y}" width="${Math.min(4, len)}" height="${BAR}"
-         fill="${d.color}"/>`
+      `<rect class="hit" x="0" y="${y - GAP / 2}" width="${w}" height="${BAR + GAP}" data-i="${i}"/>`,
+      `<rect x="${PAD.l}" y="${y}" width="${len}" height="${BAR}" rx="4" ry="4" fill="${d.color}"/>`,
+      `<rect x="${PAD.l}" y="${y}" width="${Math.min(4, len)}" height="${BAR}" fill="${d.color}"/>`
     );
     if (d.err) {
       const cy = y + BAR / 2;
-      parts.push(
-        `<line class="err" x1="${x(Math.max(d.value - d.err / 2, 0))}" y1="${cy}"
-           x2="${x(d.value + d.err / 2)}" y2="${cy}"/>`
-      );
+      parts.push(`<line class="err" x1="${x(Math.max(d.value - d.err / 2, 0))}" y1="${cy}" x2="${x(d.value + d.err / 2)}" y2="${cy}"/>`);
     }
     parts.push(
       `<text class="cat-label" x="${PAD.l - 10}" y="${y + BAR / 2 + 4}" text-anchor="end">${d.label}</text>`,
-      // Direct labels on every bar: the relief the contrast check asks for,
-      // and it removes the need to read a value off an axis.
+      // Direct labels on every bar: the relief the contrast check asks for, and
+      // it removes the need to read a value off an axis.
       `<text class="bar-label" x="${x(d.value + (d.err || 0) / 2) + 11}" y="${y + BAR / 2 + 4}">${d.text}</text>`
     );
   });
@@ -621,7 +681,7 @@ function barChart(svgId, data, opts) {
 
   svg.querySelectorAll(".hit").forEach((el) => {
     el.addEventListener("pointerenter", (e) => showTip(e, data[+el.dataset.i].tip));
-    el.addEventListener("pointermove", (e) => moveTip(e));
+    el.addEventListener("pointermove", moveTip);
     el.addEventListener("pointerleave", hideTip);
   });
 }
@@ -649,9 +709,7 @@ function hideTip() {
   t.setAttribute("aria-hidden", "true");
 }
 
-// --- render -------------------------------------------------------------
-
-function label(key) { return key; }
+// --- render ---------------------------------------------------------------
 
 function render() {
   const rs = rows();
@@ -661,26 +719,24 @@ function render() {
   }
   $("#error").innerHTML = "";
 
-  const base = rs.find((r) => r.key === "base64");
+  const baseName = state.data.meta.baseline;
+  const base = rs.find((r) => r.key === baseName);
   const sizeSorted = [...rs].sort((a, b) => a.size - b.size);
   const speedSorted = [...rs].sort((a, b) => a.rel - b.rel);
 
-  // Same sentence the comment opens with, in the same words, because it is the
-  // same measurement.
+  // The same sentence the comment opens with, in the same words, because it is
+  // the same measurement.
   $("#size-sub").textContent = state.size === "json"
     ? "Share of the original bytes, inside a JSON string"
     : "Share of the original bytes, before escaping";
   $("#speed-sub").textContent =
     (state.dir === "encode" ? "Encode" : "Decode") +
-    " time relative to Base64 — lower is faster" +
+    " time relative to " + baseName + " — lower is faster" +
     (state.total ? ", compression included" : ", codec and escaping only");
 
   barChart("chart-size", sizeSorted.map((r) => ({
-    label: label(r.key),
-    value: r.size,
-    color: HUE[r.key],
-    text: pctSize(r.size),
-    tip: sizeTip(r, base),
+    label: r.key, value: r.size, color: state.hue[r.key],
+    text: pctSize(r.size), tip: sizeTip(r, base),
   })), {
     title: "Size per codec",
     marker: base ? base.size : 0,
@@ -688,16 +744,12 @@ function render() {
   });
 
   barChart("chart-speed", speedSorted.map((r) => ({
-    label: label(r.key),
-    value: r.rel,
-    err: r.iqr,
-    color: HUE[r.key],
-    text: speedText(r.rel),
-    tip: speedTip(r),
+    label: r.key, value: r.rel, err: r.iqr, color: state.hue[r.key],
+    text: speedText(r.rel), tip: speedTip(r),
   })), {
-    title: "Speed per codec, relative to Base64",
+    title: "Speed per codec, relative to " + baseName,
     marker: 1,
-    tick: (v) => v.toFixed(1) + "×",
+    tick: (v) => v.toFixed(1) + "\u00d7",
   });
 
   renderTable(rs, base, speedSorted[0]);
@@ -708,9 +760,11 @@ function render() {
 function sizeTip(r, base) {
   const pct = base ? (r.size / base.size - 1) * 100 : 0;
   const esc = Object.values(r.perCat).reduce((a, c) => a + c.escapes, 0);
-  return `<b>${label(r.key)}</b><br>` +
+  const note = CODEC_NOTE[r.key] ? `<br><span class="k">${CODEC_NOTE[r.key]}</span>` : "";
+  return `<b>${r.key}</b>${note}<br>` +
     `<span class="k">share of input:</span> ${pctSize(r.size)}<br>` +
-    `<span class="k">against Base64:</span> ${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %<br>` +
+    `<span class="k">against ${state.data.meta.baseline}:</span> ` +
+    `${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %<br>` +
     `<span class="k">characters escaped:</span> ${esc.toLocaleString()}`;
 }
 
@@ -719,20 +773,20 @@ function speedTip(r) {
   // is one call, and "codec only" has nothing to take off it. Said here rather
   // than left for a reader to infer from a number that looks out of line.
   const carried = r.native && !state.total
-    ? `<br><span class="k">note:</span> compression is inside this codec,<br>` +
-      `so this figure carries it either way`
+    ? `<br><span class="k">compression is inside this codec, so this figure ` +
+      `carries it either way</span>`
     : "";
-  return `<b>${label(r.key)}</b><br>` +
-    `<span class="k">${state.dir}, vs Base64:</span> ${fmt(r.rel, 3)}×<br>` +
-    `<span class="k">spread (IQR):</span> ±${fmt(r.iqr / 2, 3)}×<br>` +
+  return `<b>${r.key}</b><br>` +
+    `<span class="k">${state.dir}, vs ${state.data.meta.baseline}:</span> ${fmt(r.rel, 3)}\u00d7<br>` +
+    `<span class="k">spread (IQR):</span> \u00b1${fmt(r.iqr / 2, 3)}\u00d7<br>` +
     `<span class="k">rounds:</span> ${state.data.meta.rounds}` + carried;
 }
 
-/** Two figures are called tied when the gap between them is inside the noise,
- *  which is the spread the run measured or the floor, whichever is larger.
- *  Naming a winner inside that gap would be making something up -- and the
- *  same rule decides what the pull-request comment calls a change, so a run
- *  cannot be a tie in one place and a result in the other. */
+/** Two figures are tied when the gap between them is inside the noise: the
+ *  spread the run measured, or the floor, whichever is larger. Naming a winner
+ *  inside that gap would be making something up -- and the same rule decides
+ *  what the pull-request comment calls a change, so a run cannot be a tie in
+ *  one place and a result in the other. */
 function tied(a, b) {
   const noise = Math.max((a.iqr + b.iqr) / 2, speedFloor() * Math.max(b.rel, 1e-9));
   return Math.abs(a.rel - b.rel) < noise;
@@ -748,41 +802,42 @@ function renderTable(rs, base, fastest) {
   const speedCells = sorted.map((r) => speedText(r.rel));
   const bestSize = sizeCells.length ? sizeCells[0] : null;
   const bestSpeed = fastest ? speedText(fastest.rel) : null;
+  const baseName = state.data.meta.baseline;
 
   const head = `<thead><tr>
-    <th>Codec</th><th>Share of input</th><th>vs Base64</th><th>Escaped chars</th>
-    <th>${state.dir} vs Base64</th><th>Spread</th></tr></thead>`;
+    <th>Codec</th><th>Share of input</th><th>vs ${baseName}</th>
+    <th>Escaped chars</th><th>${state.dir} vs ${baseName}</th><th>Spread</th>
+    </tr></thead>`;
   const body = sorted.map((r, i) => {
     const pct = base ? (r.size / base.size - 1) * 100 : 0;
     const esc = Object.values(r.perCat).reduce((a, c) => a + c.escapes, 0);
     const isTied = fastest && r !== fastest && tied(r, fastest);
     return `<tr>
-      <td><span class="swatch" style="background:${HUE[r.key]}"></span>${label(r.key)}</td>
+      <td><span class="swatch" style="background:${state.hue[r.key]}"></span>${r.key}</td>
       <td class="num ${sizeCells[i] === bestSize ? "best" : ""}">${sizeCells[i]}</td>
       <td class="num ${pct > 0 ? "worse" : ""}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</td>
       <td class="num">${esc ? esc.toLocaleString() : "none"}</td>
       <td class="num ${speedCells[i] === bestSpeed ? "best" : ""}">${speedCells[i]}${
         isTied ? '<span class="tie">tied</span>' : ""}</td>
-      <td class="num">±${fmt(r.iqr / 2, 3)}×</td>
+      <td class="num">\u00b1${fmt(r.iqr / 2, 3)}\u00d7</td>
     </tr>`;
   }).join("");
   $("#table").innerHTML = head + "<tbody>" + body + "</tbody>";
 }
 
 function renderCategoryTable(rs) {
-  const cats = state.categories.filter((c) => rs.some((r) => r.perCat[c]));
+  const keys = state.pairs.filter((k) => rs.some((r) => r.perCat[k]));
   const head = `<thead><tr><th>Category</th>` +
-    rs.map((r) => `<th><span class="swatch" style="background:${HUE[r.key]}"></span>${label(r.key)}</th>`).join("") +
+    rs.map((r) => `<th><span class="swatch" style="background:${state.hue[r.key]}"></span>${r.key}</th>`).join("") +
     `</tr></thead>`;
-  const body = cats.map((c) => {
-    const vals = rs.map((r) => (r.perCat[c] ? r.perCat[c].size : null));
+  const body = keys.map((k) => {
+    const vals = rs.map((r) => (r.perCat[k] ? r.perCat[k].size : null));
     const shown = vals.filter((v) => v !== null);
     // Marked on the rendered text, as in the table above.
     const texts = vals.map((v) => (v === null ? null : pctSize(v)));
     const bestText = shown.length ? pctSize(Math.min(...shown)) : null;
-    const w = state.weights[c] || 0;
-    return `<tr>
-      <td>${c}${w ? "" : ' <span class="tie">not counted</span>'}</td>` +
+    const w = state.weights[k] || 0;
+    return `<tr><td>${state.label[k]}${w ? "" : ' <span class="tie">not counted</span>'}</td>` +
       texts.map((t) => t === null ? "<td>—</td>"
         : `<td class="num ${t === bestText ? "best" : ""}">${t}</td>`).join("") +
       `</tr>`;
@@ -797,23 +852,24 @@ function renderCategoryTable(rs) {
 
 function renderMeta() {
   const m = state.data.meta;
-  const count = state.data.corpus.reduce((a, c) => a + c[0], 0);
-  const total = state.data.corpus.reduce((a, c) => a + c[1], 0);
+  const c = Object.values(state.shaped.corpus);
+  const count = c.reduce((a, x) => a + x.samples, 0);
+  const total = c.reduce((a, x) => a + x.bytes, 0);
   // The header line is the comment's header line, field for field, so the two
   // can be checked against each other at a glance. What it carries is not
   // repeated in the card below.
   $("#provenance").textContent =
-    `${state.data.corpus.samples.length} samples · ${total.toLocaleString()} bytes · ` +
-    `${m.rounds} rounds · ${m.cpu}`;
+    `${count} samples \u00b7 ${total.toLocaleString()} bytes \u00b7 ` +
+    `${m.rounds} rounds \u00b7 ${m.cpu}`;
   const rev = Object.entries(m.codec_revisions || {})
-    .map(([k, v]) => `<dt>${k}</dt><dd class="mono">${String(v).slice(0, 12)}</dd>`).join("");
+    .map(([k, v]) => `<dt>${k}</dt><dd class="mono">${v}</dd>`).join("");
   $("#meta").innerHTML =
     `<dt>generated</dt><dd>${m.generated}</dd>` +
     `<dt>baseline</dt><dd>${m.baseline}</dd>` +
     `<dt>rustc</dt><dd>${m.rustc}</dd>` + rev;
 }
 
-// --- wiring -------------------------------------------------------------
+// --- wiring ---------------------------------------------------------------
 
 function wire() {
   $("#profile").addEventListener("change", (e) => {
@@ -822,7 +878,10 @@ function wire() {
     syncWeightControls();
     render();
   });
-  $("#stage").addEventListener("change", (e) => { state.stage = e.target.value; render(); });
+  $("#stage").addEventListener("change", (e) => {
+    state.stage = e.target.value;
+    render();
+  });
   $("#reset-weights").addEventListener("click", () => {
     applyProfile(); syncWeightControls(); render();
   });
@@ -852,7 +911,10 @@ function wire() {
     if (saved) document.documentElement.setAttribute("data-theme", saved);
   } catch (_) { /* private mode, or site data blocked */ }
 
-  addEventListener("resize", () => { clearTimeout(wire._t); wire._t = setTimeout(render, 120); });
+  addEventListener("resize", () => {
+    clearTimeout(wire._t);
+    wire._t = setTimeout(render, 120);
+  });
 }
 
 load();
