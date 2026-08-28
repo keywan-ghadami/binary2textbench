@@ -17,7 +17,7 @@ with no threshold.
 
 **Speeds are not**, and they are reported at a coarser grain because of it.
 Size moves are broken out per corpus category; speed moves are not, because the
-machine will not support it. Measured here across three runs of identical code:
+machine will not support it. Measured across three runs of identical code:
 
     spread between runs        p50     p90     p99    worst
     per codec/stage/category  4.14%  12.21%  22.72%  26.10%
@@ -35,141 +35,102 @@ here. Nothing fails a build either way: it reports; a human decides.
 
 **The comment is kept short on purpose.** It is read in a scroll past, not
 studied, and every line that says the same thing on every run is a reason to
-stop reading the ones that do not. So this prints what moved and what it moved
-by, and little else: provenance goes in an HTML comment -- in the source, out of
-the rendering -- tables carry the delta rather than the delta beside the
-absolute it is a delta of, and a column that is identical on both sides is
-dropped rather than printed as a column of zeroes. The standing figures, every
-stage and every category and weightable, are on the page, which is where a
-reader who came to study them was going anyway.
+stop reading the ones that do not. So provenance goes in an HTML comment -- in
+the source, out of the rendering -- tables carry the delta rather than the delta
+beside the absolute it is a delta of, and a column identical on both sides is
+dropped rather than printed as zeroes. The standing figures, every stage and
+every category and weightable, are on the page.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-# The file on disk holds sums per (codec, stage, category) -- see compact.py,
-# which explains why the per-sample rows are not in it. `as_v3` converts an old
-# per-sample file on the fly, so an artifact from before the change still
-# reports and prints the same thing.
-from compact import as_v3, cells_of, comp_of
+# results.json holds sums per (codec, stage, group, category); compact.py
+# explains why the per-sample rows are not in it and is the only module that
+# knows the row layout.
+from compact import load, pair_label
 
 # A speed change has to clear both the measured spread and this floor before it
 # is called anything. 8 % sits above the 5.31 % worst case measured between runs
-# of identical code (see the module docstring) with enough headroom that a
-# quieter or busier runner does not start manufacturing regressions. Re-measure
-# it if the corpus or the runner changes: it is calibration, not a preference.
+# of identical code (see above) with enough headroom that a quieter or busier
+# runner does not manufacture regressions. Re-measure if the corpus or the
+# runner changes: it is calibration, not a preference.
 #
-# The page applies the same floor when it decides whether two bars are tied. If
-# this moves, move it there too, or -- better -- have the runner write it into
-# meta so there is one number instead of two.
+# The page applies the same floor when deciding whether two bars are tied. If
+# this moves, move it there too, or have the runner write meta.speed_floor.
 SPEED_FLOOR = 0.08
 
-# How many rows each table prints before the rest becomes a count. Both are
-# sorted largest-move-first, so what is cut is what moved least; the artifact
-# has every row for anyone who wants them. Speed is capped lower because it is
-# already the coarser of the two: at six codecs and five stages an everything-
-# moved change would otherwise print thirty rows saying the same thing.
+# Rows printed before the rest becomes a count. Both tables are sorted
+# largest-move-first, so what is cut is what moved least. Speed is capped lower
+# because it is already the coarser of the two.
 SIZE_ROWS = 20
 SPEED_ROWS = 12
 
 
-def load(path: Path) -> dict:
-    return as_v3(json.loads(path.read_text()))
+def by_category(r: dict) -> dict:
+    """(codec, stage, pair) -> the figures for one cell.
 
-
-def reported(results: dict):
-    """The cells the report shows: one per (codec, stage, category).
-
-    A codec that carries its own compression has two cells at every stage --
-    one as it ships, deciding for itself at that level, and one with the
-    decision forced off and the stage's compressor in front of it like everybody
-    else. The first is the row, because it is what a caller of that codec gets.
-    Taking both, which is what iterating the cells straight does, would report a
-    codec twice its real size.
+    One cell per key already, so nothing is accumulated here: `enc_raw` and
+    `enc_q` are stored as ratios and are used as they stand.
     """
-    cells = list(cells_of(results))
-    has_native = {c["codec"] for c in cells if c["native"]}
-    for c in cells:
-        if c["native"] == (c["codec"] in has_native):
-            yield c
-
-
-def by_category(results: dict) -> dict:
-    """Aggregate to (codec, stage, category): the level a reader can act on.
-
-    Per-sample rows are too many to read and per-codec totals hide which kind
-    of input moved, which is usually the whole story.
-    """
-    out: dict = defaultdict(lambda: {
-        "input": 0, "json": 0, "raw": 0, "escapes": 0,
-        "enc": 0.0, "iqr": 0.0, "dec": 0.0,
-    })
-    for c in reported(results):
-        e = out[(c["codec"], c["stage"], c["cat"])]
-        e["input"] += c["input"]
-        e["json"] += c["json"]
-        e["raw"] += c["raw"]
-        e["escapes"] += c["esc"]
-        # Already weighted by bytes where it was summed; dividing by the bytes
-        # below is what turns it back into a ratio.
-        e["enc"] += c["enc_raw_w"]
-        e["dec"] += c["dec_raw_w"]
-        e["iqr"] += c["enc_raw_q"]
-    for e in out.values():
-        if e["input"]:
-            e["enc"] /= e["input"]
-            e["dec"] /= e["input"]
-            e["iqr"] /= e["input"]
+    out = {}
+    for c in r["cells"]:
+        out[(c["codec"], c["stage"], c["pair"])] = {
+            "input": c["input"], "json": c["json"], "raw": c["raw"],
+            "escapes": c["esc"], "enc": c["enc_raw"], "iqr": c["enc_q"],
+        }
     return out
 
 
-def totals(results: dict) -> dict:
+def totals(r: dict) -> dict:
     """Whole-corpus totals per (codec, stage).
 
-    `enc` and `iqr` are the byte-weighted per-round ratios against Base64, which
-    is what the change report compares. `enc_ns` and `dec_ns` are the absolute
-    times, which the standing table needs because it has to add the compression
-    stage on and re-form the ratio itself.
+    `enc` and `iqr` are the byte-weighted ratios against the baseline, which is
+    what the change report compares. `enc_ns` and `dec_ns` are absolute times,
+    which the standing table needs because it adds the compression stage on and
+    re-forms the ratio itself.
     """
-    out: dict = defaultdict(lambda: {"input": 0, "json": 0, "raw": 0, "escapes": 0,
-                                     "enc": 0.0, "iqr": 0.0,
+    out: dict = defaultdict(lambda: {"input": 0, "json": 0, "raw": 0,
+                                     "escapes": 0, "enc": 0.0, "iqr": 0.0,
                                      "enc_ns": 0.0, "dec_ns": 0.0,
                                      "native": False})
-    for c in reported(results):
+    for c in r["cells"]:
         e = out[(c["codec"], c["stage"])]
-        # Whether the stage's cost has to be added to this row, or is already
-        # inside it. Constant across a (codec, stage), by `reported`.
+        # Whether the stage's cost has to be added to this row or is already
+        # inside it. Constant across a (codec, stage).
         e["native"] = c["native"]
-        e["input"] += c["input"]
+        n = c["input"]
+        e["input"] += n
         e["json"] += c["json"]
         e["raw"] += c["raw"]
         e["escapes"] += c["esc"]
-        e["enc"] += c["enc_raw_w"]
-        e["iqr"] += c["enc_raw_q"]
-        e["enc_ns"] += c["enc_ns"]
-        e["dec_ns"] += c["dec_ns"]
-    for e in out.values():
+        e["enc"] += c["enc_raw"] * n
+        e["iqr"] += c["enc_q"] * n
+    for (codec, stage), e in out.items():
+        t = r["times"].get((codec, stage, e["native"]))
+        if t:
+            e["enc_ns"] = t["enc_ns"]
+            e["dec_ns"] = t["dec_ns"]
         if e["input"]:
             e["enc"] /= e["input"]
             e["iqr"] /= e["input"]
     return out
 
 
-def compression_cost(results: dict) -> dict:
+def compression_cost(r: dict) -> dict:
     """What the compression stage costs, per stage, over the whole corpus.
 
     Measured once per sample and shared by every codec behind it, so adding it
     to each codec's own time is what makes a row an end-to-end figure.
     """
     out: dict = defaultdict(lambda: {"c": 0.0, "d": 0.0})
-    for row in comp_of(results):
-        out[row["stage"]]["c"] += row["comp_ns"]
-        out[row["stage"]]["d"] += row["decomp_ns"]
+    for (stage, _grp, _cat), row in r["stage_sizes"].items():
+        out[stage]["c"] += row["comp_ns"]
+        out[stage]["d"] += row["decomp_ns"]
     return out
 
 
@@ -186,8 +147,7 @@ HEADLINE_STAGES = ("none", "zstd:-5", "zstd:1")
 
 # What is worth saying about a particular level, and nothing more. The level
 # itself is never written here: it is read out of the stage id below, because a
-# hand-written heading is a heading that can say -1 over a table of level 1, and
-# did.
+# hand-written heading is one that can say -1 over a table of level 1, and did.
 STAGE_ASIDE = {
     "zstd:-5": "its fastest setting",
     "zstd:1": "the everyday default",
@@ -210,13 +170,13 @@ def stage_title(stage: str) -> str:
 def _row(label: str, e: dict, cc: dict, base_enc: float, base_dec: float) -> dict:
     """One codec at one stage, as the two numbers a reader came for.
 
-    Size is a share of the *original* bytes, not of whatever the compressor left
-    -- "my megabyte becomes this much JSON" is the question, and a ratio against
-    the compressed intermediate answers a question nobody asked.
+    Size is a share of the *original* bytes, not of whatever the compressor
+    left: "my megabyte becomes this much JSON" is the question, and a ratio
+    against the compressed intermediate answers a question nobody asked.
 
     Time counts the compression stage too, because the reader is choosing a
-    pipeline and not a subroutine. It is the same stage for every codec in the table,
-    so where it dominates every row lands near 100 % -- which is itself
+    pipeline and not a subroutine. It is the same stage for every codec in the
+    table, so where it dominates every row lands near 100 % -- which is itself
     the answer: at that setting the encoder is not what costs you time.
     """
     return {
@@ -229,53 +189,50 @@ def _row(label: str, e: dict, cc: dict, base_enc: float, base_dec: float) -> dic
     }
 
 
-def headline_rows(results: dict, stage: str) -> list[dict]:
-    t = totals(results)
-    cc = compression_cost(results).get(stage, {"c": 0.0, "d": 0.0})
-    base = t.get(("base64", stage))
+def headline_rows(r: dict, stage: str) -> list[dict]:
+    t = totals(r)
+    cc = compression_cost(r).get(stage, {"c": 0.0, "d": 0.0})
+    baseline = r["meta"]["baseline"]
+    base = t.get((baseline, stage))
     if not base:
         return []
     base_enc = base["enc_ns"] + cc["c"]
     base_dec = base["dec_ns"] + cc["d"]
 
     # A codec that carries its own compression already has the stage's cost
-    # inside its measurement, so nothing is added to it; every other row has
-    # the stage added on. Both are at the stage the table is for, so the
-    # comparison is between two pipelines doing the same job at the same
-    # setting.
+    # inside its measurement, so nothing is added to it; every other row has the
+    # stage added on. Both are at the stage the table is for, so the comparison
+    # is between two pipelines doing the same job at the same setting.
     rows = [_row(codec, e, {"c": 0.0, "d": 0.0} if e["native"] else cc,
                  base_enc, base_dec)
-            for (codec, st), e in t.items()
-            if st == stage]
-
-    rows.sort(key=lambda r: r["json"])
+            for (codec, st), e in t.items() if st == stage]
+    rows.sort(key=lambda x: x["json"])
     return rows
 
 
-def _size_cell(r: dict) -> str:
+def _size_cell(x: dict) -> str:
     """The size, and what escaping added to it where it added anything."""
-    if r["escapes"] == 0:
-        return f"{r['json'] * 100:.1f} %"
-    return f"{r['json'] * 100:.1f} % ({r['raw'] * 100:.1f} % raw)"
+    if x["escapes"] == 0:
+        return f"{x['json'] * 100:.1f} %"
+    return f"{x['json'] * 100:.1f} % ({x['raw'] * 100:.1f} % raw)"
 
 
 def state_report(r: dict) -> list[str]:
     out = [
         "Size is the encoded payload as a share of the **original** bytes, with "
         "the pre-escape length in brackets where an alphabet needs escaping. "
-        "Time is against Base64 doing the same job at the same setting, "
-        "compression included: **under 100 % is faster**. Best per column in bold.",
+        "Time is against the baseline codec doing the same job at the same "
+        "setting, compression included: **under 100 % is faster**. Best per "
+        "column in bold.",
         "",
     ]
     for stage in HEADLINE_STAGES:
         rows = headline_rows(r, stage)
         if not rows:
             continue
-        title = stage_title(stage)
         # Bold what the reader sees. Two rows that both print 44.4 % differ
-        # somewhere in the fourth decimal, and marking one of them the winner
-        # over a difference the table does not show is worse than marking
-        # neither -- so the comparison is on the rendered text.
+        # somewhere the table does not show, and marking one of them the winner
+        # over a difference nobody can read is worse than marking neither.
         sizes = [_size_cell(x) for x in rows]
         encs = [f"{x['enc'] * 100:.0f} %" for x in rows]
         decs = [f"{x['dec'] * 100:.0f} %" for x in rows]
@@ -286,27 +243,27 @@ def state_report(r: dict) -> list[str]:
         def cell(text: str, best: str) -> str:
             return f"**{text}**" if text == best else text
 
-        out.append(f"**{title}**")
+        out.append(f"**{stage_title(stage)}**")
         out.append("")
         out.append("| codec | size in JSON | encode speed | decode speed |")
         out.append("|---|--:|--:|--:|")
         for x, size, enc, dec in zip(rows, sizes, encs, decs):
-            out.append(
-                f"| `{x['label']}` | {cell(size, best_size)} "
-                f"| {cell(enc, best_enc)} | {cell(dec, best_dec)} |"
-            )
+            out.append(f"| `{x['label']}` | {cell(size, best_size)} "
+                       f"| {cell(enc, best_enc)} | {cell(dec, best_dec)} |")
         out.append("")
         # Under the table it qualifies rather than in a preamble every table has
-        # to be read past. It is only the uncompressed table where the surprise
-        # is worth spending a line on.
+        # to be read past, and only where the surprise is worth a line.
         if stage == "none":
-            out.append(
-                "_`base91z` decides its own compression, so its time already "
-                "contains it where every other row has the stage added on. Here "
-                "it is therefore the one row that may already have compressed: "
-                "that is what a caller gets with no compressor in front._"
-            )
-            out.append("")
+            native = [c["codec"] for c in r["cells"] if c["native"]]
+            if native:
+                name = sorted(set(native))[0]
+                out.append(
+                    f"_`{name}` decides its own compression, so its time already "
+                    f"contains it where every other row has the stage added on. "
+                    f"Here it is therefore the one row that may already have "
+                    f"compressed: that is what a caller gets with no compressor "
+                    f"in front._")
+                out.append("")
     return out
 
 
@@ -314,83 +271,80 @@ def diff_report(new: dict, old: dict) -> list[str]:
     """Head against base. Sizes exactly, speeds only past the measured noise."""
     n, o = by_category(new), by_category(old)
     shared = sorted(set(n) & set(o))
+    label = pair_label([k[2] for k in shared])
 
     out: list[str] = []
 
     # --- size: per category, exactly ---------------------------------
-    size_moves = [(k, n[k], o[k]) for k in shared
-                  if n[k]["json"] != o[k]["json"] or n[k]["raw"] != o[k]["raw"]]
+    moves = [(k, n[k], o[k]) for k in shared
+             if n[k]["json"] != o[k]["json"] or n[k]["raw"] != o[k]["raw"]]
 
     out.append("#### Size (exact)")
     out.append("")
-    if not size_moves:
+    if not moves:
         out.append("No size changed, on any codec, at any stage, for any category.")
     else:
         # The escaped-character column is dropped when it would be a column of
-        # zeroes, which is every change that leaves the alphabet alone. A column
-        # that says nothing still costs a reader a glance to find that out.
-        show_esc = any(a["escapes"] != b["escapes"] for _, a, b in size_moves)
+        # zeroes, which is every change that leaves the alphabet alone.
+        show_esc = any(a["escapes"] != b["escapes"] for _, a, b in moves)
         out.append("| codec | stage | category | Δ JSON bytes |"
                    + (" Δ escaped |" if show_esc else ""))
         out.append("|---|---|---|--:|" + ("--:|" if show_esc else ""))
-        size_moves.sort(key=lambda x: -abs(x[1]["json"] - x[2]["json"]))
-        for (codec, stage, cat), a, b in size_moves[:SIZE_ROWS]:
+        moves.sort(key=lambda x: -abs(x[1]["json"] - x[2]["json"]))
+        for (codec, stage, pair), a, b in moves[:SIZE_ROWS]:
             d = a["json"] - b["json"]
-            row = (f"| `{codec}` | `{stage}` | {cat} | "
+            row = (f"| `{codec}` | `{stage}` | {label[pair]} | "
                    f"{d:+,} ({pct(a['json'], b['json']):+.2f} %) |")
             if show_esc:
                 row += f" {a['escapes'] - b['escapes']:+,} |"
             out.append(row)
-        if len(size_moves) > SIZE_ROWS:
+        if len(moves) > SIZE_ROWS:
             out.append("")
-            out.append(f"_{len(size_moves) - SIZE_ROWS} further cells moved less; "
-                       f"the artifact has all of them._")
+            out.append(f"_{len(moves) - SIZE_ROWS} further cells moved less; the "
+                       f"runner's own output has all of them._")
     out.append("")
 
     # --- speed: per codec and stage, over the whole corpus ------------
     # Deliberately coarser than the size table; see the module docstring for
     # the measurement that settled the grain.
     tn, to = totals(new), totals(old)
-    speed_moves, quiet = [], 0
+    speed, quiet = [], 0
     for k in sorted(set(tn) & set(to)):
         a, b = tn[k], to[k]
         gap = a["enc"] - b["enc"]
         noise = max((a["iqr"] + b["iqr"]) / 2, SPEED_FLOOR * max(b["enc"], 1e-9))
         if abs(gap) > noise:
-            speed_moves.append((k, a, b, gap, noise))
+            speed.append((k, a, b, gap))
         elif gap:
             quiet += 1
 
     out.append("#### Speed (past the measured noise)")
     out.append("")
-    if not speed_moves:
-        tail = (f" ({quiet} codec/stage combination(s) changed by less, which "
-                f"on a shared runner is not a result)") if quiet else ""
+    if not speed:
+        tail = (f" ({quiet} codec/stage combination(s) changed by less, which on "
+                f"a shared runner is not a result)") if quiet else ""
         out.append(f"Nothing moved further than this machine's own noise{tail}.")
     else:
         # The threshold is per row and varies, but it varies in the third
         # decimal and nobody decides anything on it. The rule is worth a line
         # under the table; the number is not worth a column beside every row.
-        out.append("| codec | stage | encode vs base64 | change |")
+        out.append("| codec | stage | encode vs baseline | change |")
         out.append("|---|---|--:|--:|")
-        speed_moves.sort(key=lambda x: -abs(x[3]))
-        for (codec, stage), a, b, gap, noise in speed_moves[:SPEED_ROWS]:
+        speed.sort(key=lambda x: -abs(x[3]))
+        for (codec, stage), a, b, gap in speed[:SPEED_ROWS]:
             arrow = "slower" if gap > 0 else "faster"
-            out.append(
-                f"| `{codec}` | `{stage}` | {b['enc']:.2f}× → {a['enc']:.2f}× "
-                f"| **{pct(a['enc'], b['enc']):+.1f} % {arrow}** |"
-            )
+            out.append(f"| `{codec}` | `{stage}` | {b['enc']:.2f}× → "
+                       f"{a['enc']:.2f}× | "
+                       f"**{pct(a['enc'], b['enc']):+.1f} % {arrow}** |")
         out.append("")
         rest = []
-        if len(speed_moves) > SPEED_ROWS:
-            rest.append(f"{len(speed_moves) - SPEED_ROWS} further combination(s) moved less")
+        if len(speed) > SPEED_ROWS:
+            rest.append(f"{len(speed) - SPEED_ROWS} further combination(s) moved less")
         if quiet:
             rest.append(f"{quiet} moved by less than the threshold")
         note = ("; " + ", ".join(rest)) if rest else ""
-        out.append(
-            f"_Called a change past the larger of the run's own spread and "
-            f"{SPEED_FLOOR * 100:.0f} %{note}._"
-        )
+        out.append(f"_Called a change past the larger of the run's own spread and "
+                   f"{SPEED_FLOOR * 100:.0f} %{note}._")
     out.append("")
 
     gone = sorted(set(o) - set(n))
@@ -406,20 +360,15 @@ def diff_report(new: dict, old: dict) -> list[str]:
 
 
 def build(new: dict, old: dict | None = None, title: str = "Benchmark") -> str:
-    """The whole comment, as a string. Separated from `main` so the converter
-    can run it over two files and compare, which is how the format change is
-    shown to be exact rather than argued to be."""
-    new = as_v3(new)
-    old = as_v3(old) if old else None
+    """The whole comment as a string, separated from `main` so it can be run
+    over two files and compared rather than eyeballed."""
     meta = new["meta"]
-    count = sum(c[0] for c in new["corpus"])
-    total = sum(c[1] for c in new["corpus"])
+    count = sum(v["samples"] for v in new["corpus"].values())
+    total = sum(v["bytes"] for v in new["corpus"].values())
 
     lines = [f"## {title}", ""]
-    lines.append(
-        f"{count} samples \u00b7 {total:,} bytes \u00b7 {meta['rounds']} rounds \u00b7 "
-        f"`{meta['cpu']}`"
-    )
+    lines.append(f"{count} samples · {total:,} bytes · {meta['rounds']} rounds · "
+                 f"`{meta['cpu']}`")
     lines.append("")
 
     if old:
@@ -429,7 +378,8 @@ def build(new: dict, old: dict | None = None, title: str = "Benchmark") -> str:
         lines.append("")
         lines += diff_report(new, old)
         lines.append("")
-        lines.append("<details><summary>What each encoding costs on this head</summary>")
+        lines.append("<details><summary>What each encoding costs on this head"
+                     "</summary>")
         lines.append("")
         lines += state_report(new)
         lines.append("")
@@ -443,13 +393,14 @@ def build(new: dict, old: dict | None = None, title: str = "Benchmark") -> str:
     # identical on every run, so printing it only teaches people to scroll. The
     # page prints it in full, under Provenance, which is where somebody looking
     # for it goes.
-    revs = " ".join(f"{k}={v}" for k, v in sorted((meta.get("codec_revisions") or {}).items()))
-    lines.append(f"<!-- {revs} \u00b7 {meta['rustc']} \u00b7 {meta['generated']} -->")
+    revs = " ".join(f"{k}={v}" for k, v in
+                    sorted((meta.get("codec_revisions") or {}).items()))
+    lines.append(f"<!-- {revs} · {meta['rustc']} · {meta['generated']} -->")
 
     # Sections append their own trailing blank, so joining them leaves runs of
     # two and three. Markdown renders a run the same as a single one, which is
     # exactly why nobody notices they are there -- and they are still lines in a
-    # comment that is meant to be short.
+    # comment meant to be short.
     out: list[str] = []
     for line in lines:
         if line == "" and out and out[-1] == "":
@@ -465,7 +416,8 @@ def main() -> None:
     ap.add_argument("--title", default="Benchmark")
     args = ap.parse_args()
 
-    base = load(args.baseline) if args.baseline and args.baseline.exists() else None
+    base = (load(args.baseline)
+            if args.baseline and args.baseline.exists() else None)
     sys.stdout.write(build(load(args.results), base, args.title))
 
 
