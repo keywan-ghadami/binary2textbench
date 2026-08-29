@@ -49,10 +49,10 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-# results.json holds sums per (codec, stage, group, category); compact.py
-# explains why the per-sample rows are not in it and is the only module that
-# knows the row layout.
-from compact import load, pair_label
+# results.json holds sums per (codec, stage, group, category); results.py is the
+# only module here that knows the row layout, and runner-rust/src/compact.rs
+# explains why the per-sample rows are not in the file.
+from results import load, pair_label
 
 # A speed change has to clear both the measured spread and this floor before it
 # is called anything. 8 % sits above the 5.31 % worst case measured between runs
@@ -301,7 +301,7 @@ def diff_report(new: dict, old: dict) -> list[str]:
         if len(moves) > SIZE_ROWS:
             out.append("")
             out.append(f"_{len(moves) - SIZE_ROWS} further cells moved less; the "
-                       f"runner's own output has all of them._")
+                       f"page has all of them._")
     out.append("")
 
     # --- speed: per codec and stage, over the whole corpus ------------

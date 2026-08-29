@@ -35,7 +35,14 @@
 //! Nothing is written that did not come back: every cell round-trips through
 //! the full pipeline and is compared against the input before it is timed.
 //!
+//! What is written is the shape the page and the report read: sums per (codec,
+//! stage, group, category), not the per-sample rows they are formed from. See
+//! `compact`, which does the summing and says what each column is. `--raw`
+//! writes the per-sample rows as well, for looking at one sample.
+//!
 //!     b2t-runner --manifest ../corpus/data/manifest.json --out ../results.json
+
+mod compact;
 
 use b2t_runner::{codecs, json, timing};
 
@@ -112,8 +119,13 @@ struct SampleMeta {
     path: String,
 }
 
-// --- what gets written --------------------------------------------------
+// --- what gets measured -------------------------------------------------
 
+/// Everything the run produced, one row per measurement. This is not the shape
+/// that gets written: both readers sum these rows to a cell per (codec, stage,
+/// group, category) and show none of them individually, so `compact` does that
+/// summing here and `--out` gets the result. `--raw` writes this, for a reader
+/// who wants a single sample rather than the report.
 #[derive(Serialize)]
 struct Results {
     meta: Meta,
@@ -485,13 +497,26 @@ fn main() {
         measurements,
     };
 
-    let text = serde_json::to_string(&results).expect("results serialise");
-    std::fs::write(&args.out, text).unwrap_or_else(|e| panic!("{}: {e}", args.out.display()));
+    // The per-sample rows first, where they were asked for: if summing them
+    // trips one of its own checks, the numbers it was given are still on disk.
+    if let Some(path) = &args.raw {
+        write(path, &results);
+        eprintln!(
+            "wrote {} ({} measurements, {} compression rows)",
+            path.display(),
+            results.measurements.len(),
+            results.compression.len()
+        );
+    }
+
+    let summed = compact::of(&results);
+    write(&args.out, &summed);
     eprintln!(
-        "wrote {} ({} measurements, {} compression rows)",
+        "wrote {} (v{}, {} cells over {} measurements)",
         args.out.display(),
-        results.measurements.len(),
-        results.compression.len()
+        compact::FORMAT,
+        summed.cell_count(),
+        results.measurements.len()
     );
 }
 
@@ -688,6 +713,9 @@ fn measure_compression(
 struct Args {
     manifest: PathBuf,
     out: PathBuf,
+    /// Where to also write the per-sample rows, if anywhere. Off by default:
+    /// nothing reads them, and they are twenty times the size of what does.
+    raw: Option<PathBuf>,
     profiles: PathBuf,
     rounds: usize,
     groups: Vec<String>,
@@ -698,6 +726,7 @@ impl Args {
         let mut args = Args {
             manifest: "../corpus/data/manifest.json".into(),
             out: "../results.json".into(),
+            raw: None,
             profiles: "../profiles/profiles.toml".into(),
             rounds: 5,
             groups: Vec::new(),
@@ -719,6 +748,7 @@ impl Args {
             match flag.as_str() {
                 "--manifest" => args.manifest = value().into(),
                 "--out" => args.out = value().into(),
+                "--raw" => args.raw = Some(value().into()),
                 "--profiles" => args.profiles = value().into(),
                 "--rounds" => args.rounds = value().parse().expect("--rounds takes a number"),
                 "--groups" => {
@@ -727,7 +757,7 @@ impl Args {
                 "--help" | "-h" => {
                     eprintln!(
                         "usage: b2t-runner [--manifest PATH] [--out PATH] [--profiles PATH]\n\
-                         \x20                 [--rounds N] [--groups a,b,c]"
+                         \x20                 [--raw PATH] [--rounds N] [--groups a,b,c]"
                     );
                     std::process::exit(0);
                 }
@@ -739,6 +769,10 @@ impl Args {
             i += 1;
         }
         assert!(args.rounds >= 1, "--rounds must be at least 1");
+        assert!(
+            args.raw.as_deref() != Some(args.out.as_path()),
+            "--raw and --out name the same file; one of them would be the other"
+        );
         args
     }
 }
@@ -758,6 +792,15 @@ fn read_profiles(path: &Path) -> serde_json::Value {
             serde_json::json!({})
         }
     }
+}
+
+/// Writes one file, whole or not at all: a run that took minutes to produce
+/// these numbers should not be able to leave half of them somewhere.
+fn write(path: &Path, value: &impl Serialize) {
+    let text = serde_json::to_string(value).expect("results serialise");
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, text).unwrap_or_else(|e| panic!("{}: {e}", tmp.display()));
+    std::fs::rename(&tmp, path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
 }
 
 fn run(cmd: &str, args: &[&str]) -> String {
