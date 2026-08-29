@@ -5,3 +5,6 @@ runner-rust/target/
 # straight out of the repository and cannot produce the data itself.
 /results.json
 codecs/
+
+# Python leaves these beside a module it imports; nothing here is built.
+__pycache__/

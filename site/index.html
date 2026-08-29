@@ -376,22 +376,23 @@ async function load() {
   }
   if (text === undefined) {
     $("#error").innerHTML =
-      "<p><strong>No results.json beside this page.</strong> Generate one with " +
-      "<code>cd runner-rust &amp;&amp; cargo run --release</code>, then " +
-      "<code>python3 scripts/compact.py results.json -o site/results.json</code>. " +
+      "<p><strong>No results.json beside this page.</strong> Measure one with " +
+      "<code>cd runner-rust &amp;&amp; cargo run --release -- --out ../site/results.json</code>. " +
       "(Opening over <code>file://</code> may also need a local server: " +
       "<code>python3 -m http.server</code>.)</p><p class='sub'>" + err + "</p>";
     return;
   }
   const d = JSON.parse(text);
   if (d.v !== 4) {
-    // Converting the runner's per-sample output in the browser would mean
-    // shipping the converter for a case that only arises on an old artifact.
+    // A file this old holds per-sample measurements rather than the sums this
+    // page reads. Converting them here would mean shipping a converter to
+    // every visitor for a case that only arises on an artifact from before the
+    // runner started writing this shape; measuring again is a minute's work.
     $("#error").innerHTML =
       "<p><strong>This results.json is not in the shape this page reads.</strong> " +
-      "It holds per-sample measurements rather than sums per codec, stage, group " +
-      "and category. Convert it: <code>python3 scripts/compact.py results.json " +
-      "-o site/results.json</code>.</p>";
+      "It was written by a runner that predates this format. Measure again: " +
+      "<code>cd runner-rust &amp;&amp; cargo run --release -- " +
+      "--out ../site/results.json</code>.</p>";
     return;
   }
   state.data = d;
@@ -404,8 +405,8 @@ async function load() {
  *
  *  The only place on this page that knows the row layout. Columns are read
  *  through the *_cols lists rather than assumed, so a file with an extra column
- *  still opens. See scripts/compact.py for what each column is and why the
- *  per-sample rows are not here.
+ *  still opens. See runner-rust/src/compact.rs for what each column is and why
+ *  the per-sample rows are not here.
  */
 function shape(d) {
   const rows = (colsKey, rowsKey) => {

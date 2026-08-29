@@ -125,8 +125,13 @@ runs:
         set -euo pipefail
         ./scripts/ci-link.sh "$CODEC_NAME" "$CODEC_PATH" "$B91Z" "$B85N" "$B94M"
         cd runner-rust
+        # results.json is what the page and the report read: sums per codec,
+        # stage, group and category. The per-sample rows behind them are asked
+        # for as well and kept in the artifact -- nothing reads them, but a
+        # published number should still be traceable to the rows it came from.
         cargo run --release -- --groups "$GROUPS" --rounds "$ROUNDS" \
-            --out "$GITHUB_WORKSPACE/results.json"
+            --out "$GITHUB_WORKSPACE/results.json" \
+            --raw "$GITHUB_WORKSPACE/per-sample.json"
         echo "results=$GITHUB_WORKSPACE/results.json" >> "$GITHUB_OUTPUT"
 
     # The base branch, measured in the same job minutes later rather than read
@@ -215,3 +220,5 @@ runs:
         cp "${{ github.action_path }}/site/index.html" "$GITHUB_WORKSPACE/b2t-site/"
         cp "$GITHUB_WORKSPACE/results.json" "$GITHUB_WORKSPACE/b2t-site/"
         cp "$GITHUB_WORKSPACE/report.md" "$GITHUB_WORKSPACE/b2t-site/" || true
+        # Along for the ride in the artifact, not read by the page.
+        cp "$GITHUB_WORKSPACE/per-sample.json" "$GITHUB_WORKSPACE/b2t-site/" || true

@@ -133,6 +133,13 @@ cd runner-rust && cargo run --release -- --groups core,short,synthetic
 That writes `results.json` at the repository root; open `site/index.html`
 beside it. Both are what CI uploads as an artifact.
 
+`results.json` holds sums per (codec, stage, group, category) -- the level both
+the page and the report read, and the level the weight sliders act on. The
+per-sample rows they are formed from are twenty times the size and nothing
+shows one of them, so they are written only where they are asked for:
+`--raw per-sample.json`. `runner-rust/src/compact.rs` says what each column is
+and what the shape costs.
+
 `cargo test` checks the codecs against known vectors and against `base64(1)`,
 Python's `base64.a85encode` and Python's `json.dumps` — the baseline and the
 escaper decide every other number, so being wrong there would be invisible.
