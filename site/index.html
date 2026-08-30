@@ -112,14 +112,23 @@ details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-
 .wrow input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--bar); }
 
 /* --- the combined ranking: one row per codec, both bars beside each other --- */
-.mixbar { display: grid; gap: 7px; max-width: 560px; margin: 2px 0 18px; }
-.mix-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 14px; }
-.mix-head label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
-.mix-head .val { font-size: 0.82rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-#mix { width: 100%; accent-color: var(--bar); margin: 0; }
-.mix-ends { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-top: -3px; }
-.mix-presets { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
-.mix-presets .seg button { font-size: 0.82rem; padding: 4px 10px; min-height: 30px; }
+.factors { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 8px 22px; margin: 4px 0 12px; }
+.frow { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 6px; }
+.frow label { font-size: 0.82rem; color: var(--ink); font-weight: 600; }
+.frow .val { font-size: 0.78rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.frow input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--bar); margin: 0; }
+.frow.off label { color: var(--muted); font-weight: 500; }
+.chip {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--axis); border-radius: 3px; padding: 0 4px;
+  color: var(--muted); font-weight: 600; margin-left: 5px; vertical-align: 1px;
+}
+.presets { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; }
+.presets .seg button { font-size: 0.82rem; padding: 4px 10px; min-height: 30px; }
+.traitkey h4 { font-size: 0.82rem; margin: 12px 0 4px; color: var(--ink); }
+.traitkey ul { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--ink-2); }
+.traitkey li { margin: 2px 0; }
+.traitkey .mono { color: var(--muted); }
 
 .rank-lead { fill: var(--bar); opacity: 0.07; }
 .rank-num { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -253,34 +262,40 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
 </div>
 
 <div class="card" id="rank-card">
-  <h2>Size and speed together</h2>
+  <h2>Ranked the way you weigh it</h2>
   <h3 id="rank-sub"></h3>
 
-  <div class="mixbar">
-    <div class="mix-head">
-      <label for="mix">What matters to you</label>
-      <span class="val" id="mix-val"></span>
-    </div>
-    <input type="range" id="mix" min="0" max="100" step="5" value="50"
-           aria-label="Weighting between size and speed">
-    <div class="mix-ends"><span>Speed only</span><span>Size only</span></div>
-    <div class="mix-presets">
-      <div class="seg" role="group" aria-label="Weighting presets">
-        <button type="button" data-mix="0">Speed only</button>
-        <button type="button" data-mix="50">Even</button>
-        <button type="button" data-mix="100">Size only</button>
-      </div>
+  <p class="note" style="margin-top:0">How much each factor matters to you, one
+  slider each. They are not a see-saw: two factors both at 100 are equally
+  important to each other, and a third at 40 is worth less than either &mdash;
+  which is the only way to say that plain-text readability matters to you
+  <em>as well as</em> size, rather than instead of it. A factor at zero drops
+  out of the score and out of the chart.</p>
+
+  <div class="factors" id="factors"></div>
+
+  <div class="presets">
+    <div class="seg" role="group" aria-label="Weighting presets">
+      <button type="button" data-preset="measured">Measured only</button>
+      <button type="button" data-preset="all">All five, evenly</button>
+      <button type="button" data-preset="clear">Clear</button>
     </div>
   </div>
 
   <div class="chart-scroll"><svg id="chart-rank" role="img"></svg></div>
-  <p class="note">Each bar is that codec measured against the best figure in its
-  own column, so a full bar is the best there is and a half bar costs twice as
-  much. The number beside it is the measurement itself. The score combines the
-  two at the weighting above &mdash; 100 is best in both columns at once, and
-  rows the run cannot separate are marked <em>tied</em>. Everything here follows
-  the controls above: profile, compression stage, direction, and what is
-  counted.</p>
+  <p class="note" id="rank-note"></p>
+
+  <details class="weights">
+    <summary>Where the three unmeasured ratings come from</summary>
+    <p class="note">Size and speed come out of the corpus. These three do not,
+    and a benchmark that quietly invented numbers for them would be worse than
+    one that left them out. So each is a small set of tiers, every tier says
+    what puts a codec in it, and you can disagree with a tier without having to
+    doubt a measurement. A codec this page does not know lands in the bottom
+    tier of each &mdash; the safe direction for something nobody has heard
+    of.</p>
+    <div class="traitkey" id="traitkey"></div>
+  </details>
 </div>
 
 <div class="charts">
@@ -305,7 +320,9 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
 
 <div class="card">
   <h2>Every number</h2>
-  <h3 id="table-sub">Weighted by the profile above, ordered by the score. The table is the accessible view of every chart on this page.</h3>
+  <h3 id="table-sub">Weighted by the profile above, ordered by the score. The
+  last three columns are the declared ratings, not measurements. The table is
+  the accessible view of every chart on this page.</h3>
   <div class="chart-scroll"><table id="table"></table></div>
 </div>
 
@@ -374,6 +391,96 @@ const PROFILE_TEXT = {
   },
 };
 
+// --- what the run cannot measure ------------------------------------------
+// Size and speed come out of the corpus. Three things a reader may weigh just
+// as heavily do not: whether the encoding can leave text readable on the wire,
+// how far it is already deployed, and whether its format is still allowed to
+// change. Inventing a measurement for those would be worse than admitting they
+// are judgements, so each is a short ladder of tiers and every tier carries the
+// fact that puts a codec on it. Argue with a tier, not with a number nobody can
+// check.
+
+const PLAIN = {
+  yes: { v: 1, short: "yes",
+    why: "has a DP mode: printable text survives into the encoded output, so a " +
+         "payload can still be read on the wire" },
+  no: { v: 0, short: "no",
+    why: "encodes every input the same way; nothing of the input is readable in " +
+         "the output" },
+};
+
+const REACH = {
+  stdlib: { v: 1, short: "everywhere",
+    why: "specified by an RFC and shipped in the standard library of essentially " +
+         "every language; a decoder is already at the other end" },
+  format: { v: 0.6, short: "in formats",
+    why: "carried by published formats (PostScript and PDF) and shipped in " +
+         "several standard libraries" },
+  ported: { v: 0.3, short: "ported",
+    why: "one reference implementation, ported by third parties for twenty " +
+         "years, but never specified anywhere" },
+  single: { v: 0.1, short: "one impl",
+    why: "one implementation, no independent port, no specification: whoever " +
+         "decodes this has to take your library" },
+};
+
+const STABLE = {
+  rfc: { v: 1, short: "RFC",
+    why: "frozen by RFC 4648; the alphabet cannot change under an existing " +
+         "deployment" },
+  spec: { v: 0.8, short: "in a spec",
+    why: "frozen by the formats that carry it \u2014 changing it would break every " +
+         "PDF ever written" },
+  aged: { v: 0.6, short: "unchanged",
+    why: "no specification, but the 2005 reference implementation has not moved " +
+         "since" },
+  pre1: { v: 0.3, short: "pre-1.0",
+    why: "a 0.x version: the format is still allowed to change, and this run " +
+         "pins a commit rather than a release" },
+};
+
+// Bottom tier everywhere is what an unknown codec inherits, which is the safe
+// direction: a page that has never heard of it should not be vouching for it.
+const TRAITS = {
+  "base64":         { plain: PLAIN.no,  reach: REACH.stdlib, stable: STABLE.rfc },
+  "ascii85":        { plain: PLAIN.no,  reach: REACH.format, stable: STABLE.spec },
+  "base91-classic": { plain: PLAIN.no,  reach: REACH.ported, stable: STABLE.aged },
+  "base85n":        { plain: PLAIN.yes, reach: REACH.single, stable: STABLE.pre1 },
+  "base91z":        { plain: PLAIN.no,  reach: REACH.single, stable: STABLE.pre1 },
+  "base94max":      { plain: PLAIN.no,  reach: REACH.single, stable: STABLE.pre1 },
+};
+const UNKNOWN_TRAITS = { plain: PLAIN.no, reach: REACH.single, stable: STABLE.pre1 };
+const traitsOf = (codec) => TRAITS[codec] || UNKNOWN_TRAITS;
+
+/** The factors a reader can weigh. Two are measured on every run; three are
+ *  declared above. Heads and tags are functions because the measured two are
+ *  named by the controls -- encode or decode, with compression or without. */
+const CRITERIA = [
+  { key: "size", label: "Size", measured: true, tag: () => "SIZE",
+    head: () => "SIZE \u2014 % OF INPUT",
+    about: "share of the input the encoded form takes" },
+  { key: "speed", label: "Speed", measured: true,
+    tag: () => (state.dir === "encode" ? "ENC" : "DEC"),
+    head: () => (state.dir === "encode" ? "ENCODE" : "DECODE") +
+                " \u2014 \u00d7 " + state.data.meta.baseline.toUpperCase(),
+    about: "time against the baseline codec" },
+  { key: "plain", label: "Plain text", measured: false, tag: () => "DP",
+    head: () => "PLAIN TEXT (DP MODE)",
+    about: "can leave readable text readable" },
+  { key: "reach", label: "Adoption", measured: false, tag: () => "REACH",
+    head: () => "ADOPTION",
+    about: "how far a decoder already ships" },
+  { key: "stable", label: "Stability", measured: false, tag: () => "STABLE",
+    head: () => "STABILITY",
+    about: "whether the format may still change" },
+];
+
+const PRESETS = {
+  measured: { size: 100, speed: 100, plain: 0, reach: 0, stable: 0 },
+  all:      { size: 100, speed: 100, plain: 100, reach: 100, stable: 100 },
+  clear:    { size: 0, speed: 0, plain: 0, reach: 0, stable: 0 },
+};
+
 // Colour follows the entity, never its rank: a codec keeps its hue when the
 // sort order changes or a filter drops one of its neighbours. A codec this map
 // does not know takes the next slot rather than rendering invisible.
@@ -405,11 +512,11 @@ const SPEED_FLOOR = 0.08;
 const state = {
   data: null, shaped: null, profile: null, stage: null,
   size: "json", dir: "encode", total: true,
-  // How much of the combined score is size rather than speed. 0.5 is even, and
-  // it is a share rather than two numbers so the two can never sum to anything
-  // but one -- a ranking whose weights do not add up is a ranking nobody can
-  // read off the page.
-  mix: 0.5,
+  // How much each factor matters, 0..100 each and independent of the others.
+  // Not shares of a fixed hundred: "size and speed both matter to me, and
+  // readable output matters half as much" is a thing a reader needs to be able
+  // to say, and a see-saw between two of them cannot say it.
+  w: { size: 100, speed: 100, plain: 0, reach: 0, stable: 0 },
   weights: {}, pairs: [], label: {}, index: {}, hue: {},
 };
 
@@ -557,6 +664,8 @@ function init() {
 
   buildProfiles();
   buildStages();
+  buildFactorControls();
+  renderTraitKey();
   wire();
   render();
 }
@@ -624,17 +733,80 @@ function syncWeightControls() {
   }
 }
 
-/** The one place the mix is written. `quiet` is for the initial read, where
- *  render() has not run yet and the caller does it. */
-function setMix(v, quiet) {
-  state.mix = Math.min(Math.max(v, 0), 1);
-  const pct = Math.round(state.mix * 100);
-  $("#mix").value = String(pct);
-  $("#mix-val").textContent = `size ${pct} % \u00b7 speed ${100 - pct} %`;
-  document.querySelectorAll("[data-mix]").forEach((b) =>
-    b.setAttribute("aria-pressed", String(Number(b.dataset.mix) === pct)));
-  try { localStorage.setItem("b2t-mix", String(state.mix)); } catch (_) { /* private mode */ }
+/** The one place a factor weight is written.
+ *  `quiet` is for the initial read, where render() has not run yet. */
+function setWeight(key, v, quiet) {
+  state.w[key] = Math.min(Math.max(Math.round(v), 0), 100);
+  syncFactorControls();
+  try { localStorage.setItem("b2t-w", JSON.stringify(state.w)); } catch (_) { /* private mode */ }
   if (!quiet) render();
+}
+
+function applyPreset(name, quiet) {
+  const p = PRESETS[name];
+  if (!p) return;
+  for (const c of CRITERIA) state.w[c.key] = p[c.key] || 0;
+  syncFactorControls();
+  try { localStorage.setItem("b2t-w", JSON.stringify(state.w)); } catch (_) { /* private mode */ }
+  if (!quiet) render();
+}
+
+function buildFactorControls() {
+  const box = $("#factors");
+  box.innerHTML = "";
+  for (const c of CRITERIA) {
+    const row = document.createElement("div");
+    row.className = "frow";
+    row.id = "f-" + c.key;
+    row.innerHTML =
+      `<label for="w-${c.key}">${c.label}` +
+      `<span class="chip">${c.measured ? "measured" : "declared"}</span></label>` +
+      `<span class="val" id="wv-${c.key}">${state.w[c.key]}</span>` +
+      `<input type="range" id="w-${c.key}" min="0" max="100" step="5" ` +
+      `value="${state.w[c.key]}" aria-label="How much ${c.label} matters">`;
+    row.querySelector("input").addEventListener("input", (e) =>
+      setWeight(c.key, Number(e.target.value)));
+    box.append(row);
+  }
+}
+
+function syncFactorControls() {
+  for (const c of CRITERIA) {
+    const el = $("#w-" + c.key);
+    if (!el) continue;
+    el.value = String(state.w[c.key]);
+    $("#wv-" + c.key).textContent = state.w[c.key];
+    $("#f-" + c.key).classList.toggle("off", !state.w[c.key]);
+  }
+  const now = JSON.stringify(state.w);
+  document.querySelectorAll("[data-preset]").forEach((b) => {
+    const p = PRESETS[b.dataset.preset];
+    const same = p && CRITERIA.every((c) => (p[c.key] || 0) === state.w[c.key]);
+    b.setAttribute("aria-pressed", String(!!same));
+  });
+}
+
+/** The tiers, and who is on each. Written out rather than left in a tooltip:
+ *  these are the numbers on this page that nobody measured, so they are the
+ *  ones that have to be readable without hovering anything. */
+function renderTraitKey() {
+  const codecs = state.data.codecs;
+  const parts = [];
+  for (const c of CRITERIA.filter((x) => !x.measured)) {
+    const tiers = [];
+    for (const name of codecs) {
+      const t = traitsOf(name)[c.key];
+      let row = tiers.find((x) => x.t === t);
+      if (!row) tiers.push((row = { t: t, who: [] }));
+      row.who.push(name);
+    }
+    tiers.sort((a, b) => b.t.v - a.t.v);
+    parts.push(`<h4>${c.label}</h4><ul>` + tiers.map((row) =>
+      `<li><b>${row.t.short}</b> <span class="mono">(${row.t.v})</span> &mdash; ` +
+      `${row.t.why}<br><span class="mono">${row.who.join(", ")}</span></li>`
+    ).join("") + `</ul>`);
+  }
+  $("#traitkey").innerHTML = parts.join("");
 }
 
 function buildStages() {
@@ -787,33 +959,45 @@ function hideTip() {
 
 // --- combined score -------------------------------------------------------
 
-/** Both figures on one scale, and the two combined at the current weighting.
+/** Every factor on one scale, and all of them combined at the current weights.
  *
- *  Size and speed are measured in different units, so nothing can be added
- *  until each is a share of the best figure in its own column: base64 at 133 %
- *  against a winner at 125 % scores 0.94 on size, whatever the other column is
- *  doing. Both are ratios, so they are combined as a weighted geometric mean
- *  rather than a weighted sum -- halving the size and halving the time are the
- *  same size of win, and only the geometric mean says so.
+ *  Nothing can be added until each factor is a share of the best there is:
+ *  base64 at 133 % against a winner at 125 % scores 0.94 on size, and a codec
+ *  without a DP mode scores 0 on plain text. The score is the weighted mean of
+ *  those shares, so a factor at 40 against two at 100 is worth what its slider
+ *  says, and a codec missing a factor loses exactly the share that factor was
+ *  given -- not the whole ranking, which is what multiplying them would do.
  */
 function scored(rs) {
   const bestSize = Math.min(...rs.map((r) => r.size));
   const bestRel = Math.min(...rs.map((r) => r.rel));
-  const ws = state.mix, wp = 1 - state.mix;
+  const wSum = CRITERIA.reduce((a, c) => a + (state.w[c.key] || 0), 0);
   return rs.map((r) => {
-    const sizeScore = r.size > 0 ? bestSize / r.size : 0;
-    const speedScore = r.rel > 0 ? bestRel / r.rel : 0;
-    const score = Math.pow(sizeScore, ws) * Math.pow(speedScore, wp);
-    // Only speed carries a measured spread. It reaches the score through its
-    // own weight, so a size-only ranking inherits no noise from a column it is
-    // not counting.
+    const t = traitsOf(r.key);
+    const val = {
+      size: r.size > 0 ? bestSize / r.size : 0,
+      speed: r.rel > 0 ? bestRel / r.rel : 0,
+      plain: t.plain.v, reach: t.reach.v, stable: t.stable.v,
+    };
+    const text = {
+      size: pctSize(r.size), speed: speedText(r.rel),
+      plain: t.plain.short, reach: t.reach.short, stable: t.stable.short,
+    };
+    let acc = 0;
+    for (const c of CRITERIA) acc += (state.w[c.key] || 0) * val[c.key];
+    const score = wSum ? acc / wSum : 0;
+    // Only speed carries a measured spread, and it reaches the score through
+    // its own share of the weights: a ranking that is not counting speed
+    // inherits none of speed's noise.
     const spread = Math.max(r.iqr, speedFloor() * Math.max(r.rel, 1e-9));
-    const noise = r.rel > 0 ? score * wp * (spread / r.rel) : 0;
-    return Object.assign({}, r, {
-      sizeScore: sizeScore, speedScore: speedScore,
-      score: score, scoreNoise: noise,
-    });
-  }).sort((a, b) => b.score - a.score);
+    const noise = wSum && r.rel > 0
+      ? ((state.w.speed || 0) / wSum) * val.speed * (spread / r.rel)
+      : 0;
+    return Object.assign({}, r, { traits: t, val: val, text: text,
+                                  score: score, scoreNoise: noise });
+    // Ties in the score fall back to size, so a run with nothing weighted at
+    // all still comes out in a defensible order rather than an accidental one.
+  }).sort((a, b) => b.score - a.score || a.size - b.size);
 }
 
 /** Two scores are the same result when the gap between them is inside the
@@ -827,57 +1011,75 @@ function sameScore(a, b) {
 
 const scoreText = (v) => Math.round(v * 100);
 
+/** The columns the chart draws: the factors being counted. A factor at zero is
+ *  not in the score, so putting it in the chart would be showing a reader a
+ *  bar that moves nothing. With nothing weighted at all the two measured ones
+ *  stand in, because an empty chart says less than a chart with a note. */
+function activeCriteria() {
+  const on = CRITERIA.filter((c) => (state.w[c.key] || 0) > 0);
+  return on.length ? on : CRITERIA.filter((c) => c.measured);
+}
+
 // --- rank chart -----------------------------------------------------------
 
-/** One row per codec: rank, name, score, then the size bar and the speed bar
- *  beside each other on a shared row, so neither has to be held in memory
- *  while the other is looked up.
+/** One row per codec: rank, name, score, then one bar per counted factor,
+ *  beside each other on a shared row, so no figure has to be held in memory
+ *  while another is looked up.
  *
- *  Below about 600px there is no width for two panels worth reading, and the
- *  scroller would put the speed column off-screen -- which is the switching
- *  back and forth this chart exists to remove. So the two bars stack inside
- *  the row instead: still one block per codec, still both figures at once.
+ *  Below about 600px there is no width for panels worth reading, and the
+ *  scroller would put the later ones off-screen -- which is the switching back
+ *  and forth this chart exists to remove. So the bars stack inside the row
+ *  instead: still one block per codec, still every figure at once.
  */
-function rankChart(data, heads) {
+function rankChart(data, cols) {
   const svg = document.getElementById("chart-rank");
   const avail = svg.parentElement.clientWidth || 720;
   const compact = avail < 600;
-  const w = compact ? Math.max(avail, 330) : Math.max(avail, 640);
-  // Compact spends its left column on a second line -- name above, score
-  // below -- rather than on a score column a long codec name would run into.
+  const n = cols.length;
+  // A measured column ends in a figure; a declared one ends in a word, and
+  // "everywhere" needs more room than "1.02x" does.
+  const valW = cols.some((c) => !c.measured) ? 80 : 62;
+  // Compact gives the row a heading line of its own -- rank, name and score
+  // across the top -- so the bars underneath get the full width. Side by side
+  // there is no room left for the words a declared column ends in.
   const g = compact
-    ? { rowH: 58, bar: 16, top: 10, bot: 8, nameW: 154, scoreW: 0, tagW: 34, gap: 0, valW: 56 }
-    : { rowH: 36, bar: 20, top: 42, bot: 10, nameW: 176, scoreW: 56, tagW: 0, gap: 26, valW: 64 };
+    ? { bar: 16, top: 8, bot: 8, headH: 26, nameW: 0, scoreW: 0, tagW: 54,
+        gap: 0, valW: valW }
+    : { bar: 20, top: 42, bot: 10, headH: 0, nameW: 176, scoreW: 56, tagW: 0,
+        gap: n > 3 ? 16 : 26, valW: valW };
+  g.rowH = compact ? g.headH + n * (g.bar + 6) + 6 : 36;
+  const left = g.nameW + g.scoreW;
+  const minTrack = 62;
+  const w = compact
+    ? Math.max(avail, g.tagW + 4 + minTrack + g.valW + 4)
+    : Math.max(avail, left + n * (minTrack + g.valW) + g.gap * (n - 1));
   const h = g.top + g.bot + data.length * g.rowH;
   svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
   svg.setAttribute("width", w);
   svg.setAttribute("height", h);
-  svg.setAttribute("aria-label", "Codecs ranked on size and speed together");
+  svg.setAttribute("aria-label", "Codecs ranked on every counted factor");
 
-  const left = g.nameW + g.scoreW;
-  // Wide: two panels side by side. Compact: one track, used twice.
-  const panelW = compact ? 0 : (w - left - g.gap) / 2;
+  const panelW = compact ? 0 : (w - left - g.gap * (n - 1)) / n;
+  const trackX = g.tagW + 4;
   const trackW = compact
-    ? Math.max(w - left - g.tagW - g.valW - 6, 60)
-    : Math.max(panelW - g.valW, 70);
-  const px = compact
-    ? [left + g.tagW, left + g.tagW]
-    : [left, left + panelW + g.gap];
+    ? Math.max(w - trackX - g.valW - 4, minTrack)
+    : Math.max(panelW - g.valW, minTrack);
+  const px = cols.map((c, k) => compact ? trackX : left + k * (panelW + g.gap));
 
   const parts = [];
   if (!compact) {
+    cols.forEach((c, k) => parts.push(
+      `<text class="panel-head" x="${px[k]}" y="${g.top - 18}">${c.head()}</text>`));
     parts.push(
-      `<text class="panel-head" x="${px[0]}" y="${g.top - 18}">${heads[0]}</text>`,
-      `<text class="panel-head" x="${px[1]}" y="${g.top - 18}">${heads[1]}</text>`,
-      `<text class="panel-head" x="${left - 8}" y="${g.top - 18}" text-anchor="end">SCORE</text>`
-    );
+      `<text class="panel-head" x="${left - 8}" y="${g.top - 18}" text-anchor="end">SCORE</text>`);
   }
 
   data.forEach((d, i) => {
     const y = g.top + i * g.rowH;
-    // A tied row carries a second line, so its name sits a little high and the
-    // two lines centre as a block against the bars.
-    const ny = compact ? y + 20 : y + g.rowH / 2 + (d.tied ? -1 : 4);
+    // Side by side, a tied row carries a second line, so its name sits a little
+    // high and the two lines centre as a block against the bars. Compact has a
+    // heading line already and puts the mark on it.
+    const ny = compact ? y + 17 : y + g.rowH / 2 + (d.tied ? -1 : 4);
     const nx = compact ? 41 : 45;
     if (i === 0) {
       parts.push(`<rect class="rank-lead" x="0" y="${y}" width="${w}" height="${g.rowH}" rx="5"/>`);
@@ -888,9 +1090,9 @@ function rankChart(data, heads) {
       `<text class="rank-name${compact ? " sm" : ""}" x="${nx}" y="${ny}">${d.label}</text>`
     );
     if (compact) {
-      parts.push(`<text class="rank-score" x="${nx}" y="${ny + 18}">${d.score}</text>`);
+      parts.push(`<text class="rank-score" x="${w - 8}" y="${ny}" text-anchor="end">${d.score}</text>`);
       if (d.tied) {
-        parts.push(`<text class="rank-tie" x="${nx + 34}" y="${ny + 18}">tied with 1</text>`);
+        parts.push(`<text class="rank-tie" x="${w - 38}" y="${ny}" text-anchor="end">tied with 1</text>`);
       }
     } else {
       parts.push(`<text class="rank-score" x="${left - 8}" y="${ny}" text-anchor="end">${d.score}</text>`);
@@ -900,16 +1102,18 @@ function rankChart(data, heads) {
     }
     d.bars.forEach((b, k) => {
       const by = compact
-        ? y + 7 + k * (g.bar + 6)
+        ? y + g.headH + k * (g.bar + 6)
         : y + (g.rowH - g.bar) / 2;
       const len = Math.max(trackW * Math.min(Math.max(b.frac, 0), 1), 3);
       if (compact) {
-        parts.push(`<text class="panel-head" x="${left + g.tagW - 7}" y="${by + g.bar / 2 + 4}" text-anchor="end">${b.tag}</text>`);
+        parts.push(`<text class="panel-head" x="${g.tagW - 6}" y="${by + g.bar / 2 + 4}" text-anchor="end">${b.tag}</text>`);
       }
       parts.push(
         `<rect class="track" x="${px[k]}" y="${by}" width="${trackW}" height="${g.bar}" rx="4"/>`,
-        `<rect x="${px[k]}" y="${by}" width="${len}" height="${g.bar}" rx="4" fill="${d.color}"/>`,
-        `<rect x="${px[k]}" y="${by}" width="${Math.min(4, len)}" height="${g.bar}" fill="${d.color}"/>`,
+        `<rect x="${px[k]}" y="${by}" width="${len}" height="${g.bar}" rx="4" fill="${d.color}"${
+          b.declared ? ' opacity="0.75"' : ""}/>`,
+        `<rect x="${px[k]}" y="${by}" width="${Math.min(4, len)}" height="${g.bar}" fill="${d.color}"${
+          b.declared ? ' opacity="0.75"' : ""}/>`,
         `<text class="rank-val" x="${px[k] + trackW + 8}" y="${by + g.bar / 2 + 4}">${b.text}</text>`
       );
     });
@@ -924,20 +1128,31 @@ function rankChart(data, heads) {
   });
 }
 
-function rankTip(r, base) {
-  const pct = base ? (r.size / base.size - 1) * 100 : 0;
+function rankTip(r, base, cols) {
+  const wSum = CRITERIA.reduce((a, c) => a + (state.w[c.key] || 0), 0);
   const note = CODEC_NOTE[r.key] ? `<br><span class="k">${CODEC_NOTE[r.key]}</span>` : "";
+  const pct = base ? (r.size / base.size - 1) * 100 : 0;
+  const detail = {
+    size: `${pctSize(r.size)} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)} % vs ` +
+          `${state.data.meta.baseline})`,
+    speed: `${speedText(r.rel)} \u00b1${fmt(r.iqr / 2, 3)}\u00d7`,
+    // The tier's word, not its reasoning: the reasoning is a paragraph, it is
+    // the same paragraph on every row that shares the tier, and it is written
+    // out under the chart where it can be read rather than hovered.
+    plain: r.traits.plain.short,
+    reach: r.traits.reach.short,
+    stable: r.traits.stable.short,
+  };
+  const lines = cols.map((c) => {
+    const share = wSum ? Math.round((state.w[c.key] / wSum) * 100) : 0;
+    return `<span class="k">${c.label} (${share} % of the score):</span> ` +
+      `${detail[c.key]} \u2014 ${Math.round(r.val[c.key] * 100)} % of the best`;
+  }).join("<br>");
   return `<b>${r.key}</b>${note}<br>` +
-    `<span class="k">score at ${Math.round(state.mix * 100)} % size / ` +
-    `${Math.round((1 - state.mix) * 100)} % speed:</span> ${scoreText(r.score)}<br>` +
-    `<span class="k">size:</span> ${pctSize(r.size)} ` +
-    `(${pct >= 0 ? "+" : ""}${pct.toFixed(1)} % vs ${state.data.meta.baseline}), ` +
-    `${Math.round(r.sizeScore * 100)} % of the best<br>` +
-    `<span class="k">${state.dir}:</span> ${speedText(r.rel)} ` +
-    `\u00b1${fmt(r.iqr / 2, 3)}\u00d7, ${Math.round(r.speedScore * 100)} % of the best` +
+    `<span class="k">score:</span> ${scoreText(r.score)}<br>` + lines +
     (r.native && !state.total
-      ? `<br><span class="k">compression is inside this codec, so this figure ` +
-        `carries it either way</span>`
+      ? `<br><span class="k">compression is inside this codec, so the speed ` +
+        `figure carries it either way</span>`
       : "");
 }
 
@@ -985,26 +1200,37 @@ function render() {
   });
 
   const ranked = scored(rs);
-  // The column heads stay short enough to survive a narrow window; what the
-  // controls currently mean is said once, in the sub-heading, where there is
-  // room for a sentence.
-  const speedHead = (state.dir === "encode" ? "ENCODE" : "DECODE") +
-    " \u2014 \u00d7 " + baseName.toUpperCase();
-  $("#rank-sub").textContent =
-    "Size " + (state.size === "json" ? "inside a JSON string" : "before escaping") +
-    ", " + state.dir + " time " +
-    (state.total ? "with compression" : "for the codec alone") +
-    " against " + baseName + ". Longer is better in both columns.";
+  const cols = activeCriteria();
+  const wSum = CRITERIA.reduce((a, c) => a + (state.w[c.key] || 0), 0);
+  // What the controls currently mean is said once, in the sub-heading, where
+  // there is room for a sentence; the column heads stay short enough to
+  // survive a narrow window.
+  $("#rank-sub").textContent = wSum
+    ? "Counting " + cols.map((c) => c.label.toLowerCase()).join(", ") +
+      ". Longer is better in every column."
+    : "Nothing is being counted \u2014 every factor is at zero.";
+  $("#rank-note").innerHTML = wSum
+    ? "Each bar is that codec against the best there is in its own column, so a " +
+      "full bar is the best and a half bar is worth half as much; the figure " +
+      "beside it is the measurement or the rating itself. The score is those " +
+      "bars averaged at the weights above, which is why a codec missing a " +
+      "factor loses that factor's share and no more. Rows the run cannot " +
+      "separate are marked <em>tied</em>. Size and speed follow the controls " +
+      "at the top of the page: profile, compression stage, direction, and what " +
+      "is counted."
+    : "Every factor is at zero, so there is no score to rank on \u2014 the rows " +
+      "below are in size order and the two measured columns are shown for " +
+      "orientation. Raise a slider to rank on it.";
   rankChart(ranked.map((r) => ({
-    label: r.key, color: state.hue[r.key], score: scoreText(r.score),
-    tied: r !== ranked[0] && sameScore(r, ranked[0]),
-    bars: [
-      { frac: r.sizeScore, text: pctSize(r.size), tag: "SIZE" },
-      { frac: r.speedScore, text: speedText(r.rel),
-        tag: state.dir === "encode" ? "ENC" : "DEC" },
-    ],
-    tip: rankTip(r, base),
-  })), ["SIZE \u2014 % OF INPUT", speedHead]);
+    label: r.key, color: state.hue[r.key],
+    score: wSum ? scoreText(r.score) : "\u2014",
+    tied: wSum > 0 && r !== ranked[0] && sameScore(r, ranked[0]),
+    bars: cols.map((c) => ({
+      frac: r.val[c.key], text: r.text[c.key], tag: c.tag(),
+      declared: !c.measured,
+    })),
+    tip: rankTip(r, base, cols),
+  })), cols);
 
   renderTable(ranked, base, speedSorted[0]);
   renderCategoryTable(rs);
@@ -1065,6 +1291,7 @@ function renderTable(rs, base, fastest) {
   const head = `<thead><tr>
     <th>#</th><th class="lbl">Codec</th><th>Score</th><th>Share of input</th><th>vs ${baseName}</th>
     <th>Escaped chars</th><th>${state.dir} vs ${baseName}</th><th>Spread</th>
+    <th>DP</th><th>Adoption</th><th>Stability</th>
     </tr></thead>`;
   const body = sorted.map((r, i) => {
     const pct = base ? (r.size / base.size - 1) * 100 : 0;
@@ -1081,6 +1308,9 @@ function renderTable(rs, base, fastest) {
       <td class="num ${speedCells[i] === bestSpeed ? "best" : ""}">${speedCells[i]}${
         isTied ? '<span class="tie">tied</span>' : ""}</td>
       <td class="num">\u00b1${fmt(r.iqr / 2, 3)}\u00d7</td>
+      <td class="num" title="${r.traits.plain.why}">${r.traits.plain.short}</td>
+      <td class="num" title="${r.traits.reach.why}">${r.traits.reach.short}</td>
+      <td class="num" title="${r.traits.stable.why}">${r.traits.stable.short}</td>
     </tr>`;
   }).join("");
   $("#table").innerHTML = head + "<tbody>" + body + "</tbody>";
@@ -1147,18 +1377,22 @@ function wire() {
     applyProfile(); syncWeightControls(); render();
   });
 
-  $("#mix").addEventListener("input", (e) => setMix(Number(e.target.value) / 100));
-  document.querySelectorAll("[data-mix]").forEach((b) => {
-    b.addEventListener("click", () => setMix(Number(b.dataset.mix) / 100));
+  document.querySelectorAll("[data-preset]").forEach((b) => {
+    b.addEventListener("click", () => applyPreset(b.dataset.preset));
   });
   try {
-    // Nothing stored reads back as null, and Number(null) is a perfectly
-    // finite zero -- which would silently open the page on speed alone.
-    const raw = localStorage.getItem("b2t-mix");
-    const saved = raw === null ? NaN : Number(raw);
-    if (Number.isFinite(saved) && saved >= 0 && saved <= 1) state.mix = saved;
-  } catch (_) { /* private mode, or site data blocked */ }
-  setMix(state.mix, true);
+    // Read key by key: a stored file from an older version of this page knows
+    // nothing about a factor added since, and that factor should keep its
+    // default rather than the page opening with it undefined.
+    const saved = JSON.parse(localStorage.getItem("b2t-w") || "null");
+    if (saved) {
+      for (const c of CRITERIA) {
+        const v = Number(saved[c.key]);
+        if (Number.isFinite(v) && v >= 0 && v <= 100) state.w[c.key] = v;
+      }
+    }
+  } catch (_) { /* private mode, site data blocked, or a file we cannot read */ }
+  syncFactorControls();
 
   for (const [attr, key, cast] of [["size", "size", String], ["dir", "dir", String],
                                    ["total", "total", (v) => v === "1"]]) {

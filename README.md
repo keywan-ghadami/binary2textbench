@@ -146,15 +146,31 @@ escaper decide every other number, so being wrong there would be invisible.
 
 ## The page
 
-Above the size and speed charts, the page ranks the codecs on both figures at
-once: one row per codec, the size bar and the speed bar beside each other, and
-a slider for how much of the ranking is size rather than speed. Each bar is
-that codec against the best figure in its own column, which is what puts a per
-cent and a multiple on one scale; the score is those two shares combined as a
-weighted geometric mean, so halving the size and halving the time count as the
-same size of win. Two scores whose gap is inside the measured spread are marked
-tied rather than ordered — the rule the pull-request comment already applies to
-whether a run changed anything.
+Above the size and speed charts, the page ranks the codecs on every factor at
+once: one row per codec, one bar per factor beside each other, and a slider per
+factor for how much it matters. The sliders are not shares of a fixed hundred
+and not a see-saw — two factors both at 100 are equally important to each
+other, which is the only way to say that readable output matters *as well as*
+size rather than instead of it. Each bar is that codec against the best there
+is in its own column, which is what puts a per cent, a multiple and a rating on
+one scale, and the score is those bars averaged at the weights: a codec missing
+a factor loses that factor's share and no more. Two scores whose gap is inside
+the measured spread are marked tied rather than ordered — the rule the
+pull-request comment already applies to whether a run changed anything.
+
+Two of the five factors are measured on every run. Three are not, and could not
+be: whether the encoding has a DP mode that leaves printable text readable in
+its output, how far a decoder already ships, and whether the format is still
+allowed to change. Inventing measurements for those would be worse than
+admitting they are judgements, so each is a short ladder of tiers, every tier
+states the fact that puts a codec on it — an RFC, a format that carries it, a
+0.x version number — and the page writes the whole ladder out under the chart.
+They start at zero weight: the page will not weigh them for a reader who has
+not asked it to. A codec the page has not heard of lands in the bottom tier of
+each, which is the safe direction. The tiers live in `site/index.html` beside
+the rest of the page's copy, because they are a claim about the world rather
+than a measurement of it, and the file that gets regenerated every run is not
+where a claim should live.
 
 `site/` is deployed to <https://bench.ghadami.de> as a Cloudflare Worker with
 static assets — `wrangler.jsonc` is the whole configuration, and there is no
