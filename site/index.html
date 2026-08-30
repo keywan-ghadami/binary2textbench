@@ -112,7 +112,7 @@ details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-
 .wrow input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--bar); }
 
 /* --- the combined ranking: one row per codec, both bars beside each other --- */
-.factors { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 8px 22px; margin: 4px 0 12px; }
+.factors { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 8px 22px; margin: 4px 0 20px; }
 .frow { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 6px; }
 .frow label { font-size: 0.82rem; color: var(--ink); font-weight: 600; }
 .frow .val { font-size: 0.78rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
@@ -123,8 +123,6 @@ details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-
   border: 1px solid var(--axis); border-radius: 3px; padding: 0 4px;
   color: var(--muted); font-weight: 600; margin-left: 5px; vertical-align: 1px;
 }
-.presets { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; }
-.presets .seg button { font-size: 0.82rem; padding: 4px 10px; min-height: 30px; }
 .traitkey h4 { font-size: 0.82rem; margin: 12px 0 4px; color: var(--ink); }
 .traitkey ul { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--ink-2); }
 .traitkey li { margin: 2px 0; }
@@ -274,19 +272,11 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
 
   <div class="factors" id="factors"></div>
 
-  <div class="presets">
-    <div class="seg" role="group" aria-label="Weighting presets">
-      <button type="button" data-preset="measured">Measured only</button>
-      <button type="button" data-preset="all">All five, evenly</button>
-      <button type="button" data-preset="clear">Clear</button>
-    </div>
-  </div>
-
   <div class="chart-scroll"><svg id="chart-rank" role="img"></svg></div>
   <p class="note" id="rank-note"></p>
 
   <details class="weights">
-    <summary>Where the three unmeasured ratings come from</summary>
+    <summary>Where the unmeasured ratings come from</summary>
     <p class="note">Size and speed come out of the corpus. These three do not,
     and a benchmark that quietly invented numbers for them would be worse than
     one that left them out. So each is a small set of tiers, every tier says
@@ -321,7 +311,7 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
 <div class="card">
   <h2>Every number</h2>
   <h3 id="table-sub">Weighted by the profile above, ordered by the score. The
-  last three columns are the declared ratings, not measurements. The table is
+  last four columns are the declared ratings, not measurements. The table is
   the accessible view of every chart on this page.</h3>
   <div class="chart-scroll"><table id="table"></table></div>
 </div>
@@ -421,6 +411,31 @@ const PLAIN = {
          "is readable in the output" },
 };
 
+// What carries the encoded form in practice is not a file but a container: a
+// JSON string, a URL, a cookie value, an HTML attribute. Each has characters it
+// treats as its own, and an alphabet that uses them has to be escaped, which
+// costs size on every hop and breaks whatever forgot to escape it. Part of this
+// is measured -- the escaped-character column in the table counts what JSON has
+// to escape -- but a URL, a cookie and an HTML attribute each draw the line
+// somewhere else, and no corpus of ours settles where.
+const CONTAIN = {
+  any: { v: 1, short: "anywhere",
+    why: "the same RFC defines a URL- and filename-safe variant, and the plain " +
+         "alphabet needs no escaping in a JSON string, in HTML text or in a " +
+         "cookie value" },
+  json_html: { v: 0.6, short: "json, html",
+    why: "an alphabet picked so a JSON string needs no escaping, and HTML text " +
+         "carries it as-is; a URL or a cookie value still has to " +
+         "percent-encode part of it" },
+  json: { v: 0.4, short: "json only",
+    why: "usable inside a JSON document and not much beyond it" },
+  escaped: { v: 0.1, short: "escaped",
+    why: "the alphabet contains characters the containers treat as their own " +
+         "-- quotes, backslashes and the rest -- so every hop escapes it; the " +
+         "escaped-character column in the table below counts what that costs " +
+         "inside JSON alone" },
+};
+
 const REACH = {
   stdlib: { v: 1, short: "everywhere",
     why: "specified by an RFC and shipped in the standard library of essentially " +
@@ -454,14 +469,15 @@ const STABLE = {
 // Bottom tier everywhere is what an unknown codec inherits, which is the safe
 // direction: a page that has never heard of it should not be vouching for it.
 const TRAITS = {
-  "base64":         { plain: PLAIN.none,   reach: REACH.stdlib, stable: STABLE.rfc },
-  "ascii85":        { plain: PLAIN.none,   reach: REACH.format, stable: STABLE.spec },
-  "base91-classic": { plain: PLAIN.none,   reach: REACH.ported, stable: STABLE.aged },
-  "base85n":        { plain: PLAIN.design, reach: REACH.single, stable: STABLE.pre1 },
-  "base91z":        { plain: PLAIN.chance, reach: REACH.single, stable: STABLE.pre1 },
-  "base94max":      { plain: PLAIN.none,   reach: REACH.single, stable: STABLE.pre1 },
+  "base64":         { plain: PLAIN.none,   contain: CONTAIN.any,       reach: REACH.stdlib, stable: STABLE.rfc },
+  "ascii85":        { plain: PLAIN.none,   contain: CONTAIN.escaped,   reach: REACH.format, stable: STABLE.spec },
+  "base91-classic": { plain: PLAIN.none,   contain: CONTAIN.escaped,   reach: REACH.ported, stable: STABLE.aged },
+  "base85n":        { plain: PLAIN.design, contain: CONTAIN.json_html, reach: REACH.single, stable: STABLE.pre1 },
+  "base91z":        { plain: PLAIN.chance, contain: CONTAIN.json,      reach: REACH.single, stable: STABLE.pre1 },
+  "base94max":      { plain: PLAIN.none,   contain: CONTAIN.escaped,   reach: REACH.single, stable: STABLE.pre1 },
 };
-const UNKNOWN_TRAITS = { plain: PLAIN.none, reach: REACH.single, stable: STABLE.pre1 };
+const UNKNOWN_TRAITS = { plain: PLAIN.none, contain: CONTAIN.escaped,
+                         reach: REACH.single, stable: STABLE.pre1 };
 const traitsOf = (codec) => TRAITS[codec] || UNKNOWN_TRAITS;
 
 /** The factors a reader can weigh. Two are measured on every run; three are
@@ -469,15 +485,16 @@ const traitsOf = (codec) => TRAITS[codec] || UNKNOWN_TRAITS;
  *  named by the controls -- encode or decode, with compression or without. */
 const CRITERIA = [
   { key: "size", label: "Size", measured: true, tag: () => "SIZE",
-    head: () => "SIZE \u2014 % OF INPUT",
+    head: () => "SIZE \u2014 % OF INPUT", shead: () => "SIZE %",
     about: "share of the input the encoded form takes" },
   { key: "speed", label: "Speed", measured: true,
     tag: () => (state.dir === "encode" ? "ENC" : "DEC"),
     head: () => (state.dir === "encode" ? "ENCODE" : "DECODE") +
                 " \u2014 \u00d7 " + state.data.meta.baseline.toUpperCase(),
+    shead: () => (state.dir === "encode" ? "ENCODE \u00d7" : "DECODE \u00d7"),
     about: "time against the baseline codec" },
   { key: "plain", label: "Readable output", measured: false, tag: () => "DP",
-    head: () => "READABLE OUTPUT (DP)",
+    head: () => "READABLE OUTPUT (DP)", shead: () => "READABLE",
     about: "Direct passthrough: bytes already valid in the alphabet go into " +
            "the output unchanged, a substitution alphabet carries a few more " +
            "through 1:1, and a length signal in front of each run says how far " +
@@ -485,6 +502,16 @@ const CRITERIA = [
            "but whether a payload can be read without decoding it \u2014 the " +
            "debugging time that saves is the whole point, and a mode that only " +
            "happens to trigger saves none of it." },
+  { key: "contain", label: "Container fit", measured: false, tag: () => "FIT",
+    head: () => "CONTAINER FIT", shead: () => "CONTAINER",
+    about: "What actually carries the encoded form is a JSON string, a URL, a " +
+           "cookie value, an HTML attribute \u2014 each with characters it " +
+           "treats as its own. An alphabet that uses them gets escaped on " +
+           "every hop, which costs size the size column never sees and breaks " +
+           "whatever forgot to escape it. The escaped-character column in the " +
+           "table below measures the JSON half of this; a URL and a cookie " +
+           "draw the line elsewhere, which is why the rating is a judgement " +
+           "and not a measurement." },
   { key: "reach", label: "Adoption", measured: false, tag: () => "REACH",
     head: () => "ADOPTION",
     about: "How far a decoder already ships: whether the other end can read " +
@@ -494,12 +521,6 @@ const CRITERIA = [
     about: "Whether the format is still allowed to change under something " +
            "already deployed." },
 ];
-
-const PRESETS = {
-  measured: { size: 100, speed: 100, plain: 0, reach: 0, stable: 0 },
-  all:      { size: 100, speed: 100, plain: 100, reach: 100, stable: 100 },
-  clear:    { size: 0, speed: 0, plain: 0, reach: 0, stable: 0 },
-};
 
 // Colour follows the entity, never its rank: a codec keeps its hue when the
 // sort order changes or a filter drops one of its neighbours. A codec this map
@@ -536,7 +557,7 @@ const state = {
   // Not shares of a fixed hundred: "size and speed both matter to me, and
   // readable output matters half as much" is a thing a reader needs to be able
   // to say, and a see-saw between two of them cannot say it.
-  w: { size: 100, speed: 100, plain: 0, reach: 0, stable: 0 },
+  w: { size: 100, speed: 100, plain: 0, contain: 0, reach: 0, stable: 0 },
   weights: {}, pairs: [], label: {}, index: {}, hue: {},
 };
 
@@ -762,15 +783,6 @@ function setWeight(key, v, quiet) {
   if (!quiet) render();
 }
 
-function applyPreset(name, quiet) {
-  const p = PRESETS[name];
-  if (!p) return;
-  for (const c of CRITERIA) state.w[c.key] = p[c.key] || 0;
-  syncFactorControls();
-  try { localStorage.setItem("b2t-w", JSON.stringify(state.w)); } catch (_) { /* private mode */ }
-  if (!quiet) render();
-}
-
 function buildFactorControls() {
   const box = $("#factors");
   box.innerHTML = "";
@@ -798,12 +810,6 @@ function syncFactorControls() {
     $("#wv-" + c.key).textContent = state.w[c.key];
     $("#f-" + c.key).classList.toggle("off", !state.w[c.key]);
   }
-  const now = JSON.stringify(state.w);
-  document.querySelectorAll("[data-preset]").forEach((b) => {
-    const p = PRESETS[b.dataset.preset];
-    const same = p && CRITERIA.every((c) => (p[c.key] || 0) === state.w[c.key]);
-    b.setAttribute("aria-pressed", String(!!same));
-  });
 }
 
 /** The tiers, and who is on each. Written out rather than left in a tooltip:
@@ -997,11 +1003,13 @@ function scored(rs) {
     const val = {
       size: r.size > 0 ? bestSize / r.size : 0,
       speed: r.rel > 0 ? bestRel / r.rel : 0,
-      plain: t.plain.v, reach: t.reach.v, stable: t.stable.v,
+      plain: t.plain.v, contain: t.contain.v,
+      reach: t.reach.v, stable: t.stable.v,
     };
     const text = {
       size: pctSize(r.size), speed: speedText(r.rel),
-      plain: t.plain.short, reach: t.reach.short, stable: t.stable.short,
+      plain: t.plain.short, contain: t.contain.short,
+      reach: t.reach.short, stable: t.stable.short,
     };
     let acc = 0;
     for (const c of CRITERIA) acc += (state.w[c.key] || 0) * val[c.key];
@@ -1058,7 +1066,13 @@ function rankChart(data, cols) {
   const n = cols.length;
   // A measured column ends in a figure; a declared one ends in a word, and
   // "everywhere" needs more room than "1.02x" does.
-  const valW = cols.some((c) => !c.measured) ? 80 : 62;
+  const valW = cols.some((c) => !c.measured) ? (n > 4 ? 74 : 80) : 62;
+  // Six panels do not fit a page-wide card at the width four of them want. The
+  // bars are relative to each other rather than read off an axis, so they lose
+  // less by being short than the card loses by scrolling a column half out of
+  // sight -- and the heads go to their short forms for the same reason.
+  const minTrack = n > 4 ? 48 : 62;
+  const headOf = (c) => (n > 4 && c.shead ? c.shead() : c.head());
   // Compact gives the row a heading line of its own -- rank, name and score
   // across the top -- so the bars underneath get the full width. Side by side
   // there is no room left for the words a declared column ends in.
@@ -1066,10 +1080,9 @@ function rankChart(data, cols) {
     ? { bar: 16, top: 8, bot: 8, headH: 26, nameW: 0, scoreW: 0, tagW: 54,
         gap: 0, valW: valW }
     : { bar: 20, top: 42, bot: 10, headH: 0, nameW: 176, scoreW: 56, tagW: 0,
-        gap: n > 3 ? 16 : 26, valW: valW };
+        gap: n > 4 ? 12 : n > 3 ? 16 : 26, valW: valW };
   g.rowH = compact ? g.headH + n * (g.bar + 6) + 6 : 36;
   const left = g.nameW + g.scoreW;
-  const minTrack = 62;
   const w = compact
     ? Math.max(avail, g.tagW + 4 + minTrack + g.valW + 4)
     : Math.max(avail, left + n * (minTrack + g.valW) + g.gap * (n - 1));
@@ -1089,7 +1102,7 @@ function rankChart(data, cols) {
   const parts = [];
   if (!compact) {
     cols.forEach((c, k) => parts.push(
-      `<text class="panel-head" x="${px[k]}" y="${g.top - 18}">${c.head()}</text>`));
+      `<text class="panel-head" x="${px[k]}" y="${g.top - 18}">${headOf(c)}</text>`));
     parts.push(
       `<text class="panel-head" x="${left - 8}" y="${g.top - 18}" text-anchor="end">SCORE</text>`);
   }
@@ -1160,6 +1173,7 @@ function rankTip(r, base, cols) {
     // the same paragraph on every row that shares the tier, and it is written
     // out under the chart where it can be read rather than hovered.
     plain: r.traits.plain.short,
+    contain: r.traits.contain.short,
     reach: r.traits.reach.short,
     stable: r.traits.stable.short,
   };
@@ -1311,7 +1325,7 @@ function renderTable(rs, base, fastest) {
   const head = `<thead><tr>
     <th>#</th><th class="lbl">Codec</th><th>Score</th><th>Share of input</th><th>vs ${baseName}</th>
     <th>Escaped chars</th><th>${state.dir} vs ${baseName}</th><th>Spread</th>
-    <th>Readable</th><th>Adoption</th><th>Stability</th>
+    <th>Readable</th><th>Container</th><th>Adoption</th><th>Stability</th>
     </tr></thead>`;
   const body = sorted.map((r, i) => {
     const pct = base ? (r.size / base.size - 1) * 100 : 0;
@@ -1329,6 +1343,7 @@ function renderTable(rs, base, fastest) {
         isTied ? '<span class="tie">tied</span>' : ""}</td>
       <td class="num">\u00b1${fmt(r.iqr / 2, 3)}\u00d7</td>
       <td class="num" title="${r.traits.plain.why}">${r.traits.plain.short}</td>
+      <td class="num" title="${r.traits.contain.why}">${r.traits.contain.short}</td>
       <td class="num" title="${r.traits.reach.why}">${r.traits.reach.short}</td>
       <td class="num" title="${r.traits.stable.why}">${r.traits.stable.short}</td>
     </tr>`;
@@ -1397,9 +1412,6 @@ function wire() {
     applyProfile(); syncWeightControls(); render();
   });
 
-  document.querySelectorAll("[data-preset]").forEach((b) => {
-    b.addEventListener("click", () => applyPreset(b.dataset.preset));
-  });
   try {
     // Read key by key: a stored file from an older version of this page knows
     // nothing about a factor added since, and that factor should keep its
