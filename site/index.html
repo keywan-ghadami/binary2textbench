@@ -111,10 +111,36 @@ details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-
 .wrow .val { font-size: 0.78rem; color: var(--muted); text-align: right; }
 .wrow input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--bar); }
 
+/* --- the combined ranking: one row per codec, both bars beside each other --- */
+.mixbar { display: grid; gap: 7px; max-width: 560px; margin: 2px 0 18px; }
+.mix-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 14px; }
+.mix-head label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.mix-head .val { font-size: 0.82rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+#mix { width: 100%; accent-color: var(--bar); margin: 0; }
+.mix-ends { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin-top: -3px; }
+.mix-presets { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+.mix-presets .seg button { font-size: 0.82rem; padding: 4px 10px; min-height: 30px; }
+
+.rank-lead { fill: var(--bar); opacity: 0.07; }
+.rank-num { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.rank-name { fill: var(--ink); font-size: 13px; font-weight: 600; }
+/* The compact row gives a name less room than the widest one wants. */
+.rank-name.sm { font-size: 12px; }
+.rank-score { fill: var(--ink); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rank-tie { fill: var(--muted); font-size: 10.5px; }
+.panel-head { fill: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; font-weight: 600; }
+.track { fill: var(--grid); }
+.rank-val { fill: var(--ink-2); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
 /* --- charts --- */
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; }
 .chart-scroll { overflow-x: auto; }
-svg { display: block; max-width: 100%; }
+/* height:auto keeps a scaled-down chart from letterboxing inside the box the
+   height attribute reserved. The ranking opts out of the shrink entirely: two
+   panels of bars at 60 % of their width are unreadable, and the scroller
+   around it is there for exactly this. */
+svg { display: block; max-width: 100%; height: auto; }
+#chart-rank { max-width: none; }
 .bar-label {
   fill: var(--ink); font-size: 12px; font-weight: 600;
   /* The baseline marker runs behind these, and a dashed line through a digit is
@@ -136,7 +162,7 @@ svg { display: block; max-width: 100%; }
 /* --- table --- */
 table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
 th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-th:first-child, td:first-child { text-align: left; }
+th:first-child, td:first-child, th.lbl, td.lbl { text-align: left; }
 thead th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 tbody tr:hover { background: color-mix(in srgb, var(--bar) 7%, transparent); }
 td.num { font-variant-numeric: tabular-nums; }
@@ -226,6 +252,37 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
   </details>
 </div>
 
+<div class="card" id="rank-card">
+  <h2>Size and speed together</h2>
+  <h3 id="rank-sub"></h3>
+
+  <div class="mixbar">
+    <div class="mix-head">
+      <label for="mix">What matters to you</label>
+      <span class="val" id="mix-val"></span>
+    </div>
+    <input type="range" id="mix" min="0" max="100" step="5" value="50"
+           aria-label="Weighting between size and speed">
+    <div class="mix-ends"><span>Speed only</span><span>Size only</span></div>
+    <div class="mix-presets">
+      <div class="seg" role="group" aria-label="Weighting presets">
+        <button type="button" data-mix="0">Speed only</button>
+        <button type="button" data-mix="50">Even</button>
+        <button type="button" data-mix="100">Size only</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-scroll"><svg id="chart-rank" role="img"></svg></div>
+  <p class="note">Each bar is that codec measured against the best figure in its
+  own column, so a full bar is the best there is and a half bar costs twice as
+  much. The number beside it is the measurement itself. The score combines the
+  two at the weighting above &mdash; 100 is best in both columns at once, and
+  rows the run cannot separate are marked <em>tied</em>. Everything here follows
+  the controls above: profile, compression stage, direction, and what is
+  counted.</p>
+</div>
+
 <div class="charts">
   <div class="card">
     <h2>Size</h2>
@@ -248,7 +305,7 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
 
 <div class="card">
   <h2>Every number</h2>
-  <h3>Weighted by the profile above. The table is the accessible view of both charts.</h3>
+  <h3 id="table-sub">Weighted by the profile above, ordered by the score. The table is the accessible view of every chart on this page.</h3>
   <div class="chart-scroll"><table id="table"></table></div>
 </div>
 
@@ -348,6 +405,11 @@ const SPEED_FLOOR = 0.08;
 const state = {
   data: null, shaped: null, profile: null, stage: null,
   size: "json", dir: "encode", total: true,
+  // How much of the combined score is size rather than speed. 0.5 is even, and
+  // it is a share rather than two numbers so the two can never sum to anything
+  // but one -- a ranking whose weights do not add up is a ranking nobody can
+  // read off the page.
+  mix: 0.5,
   weights: {}, pairs: [], label: {}, index: {}, hue: {},
 };
 
@@ -562,6 +624,19 @@ function syncWeightControls() {
   }
 }
 
+/** The one place the mix is written. `quiet` is for the initial read, where
+ *  render() has not run yet and the caller does it. */
+function setMix(v, quiet) {
+  state.mix = Math.min(Math.max(v, 0), 1);
+  const pct = Math.round(state.mix * 100);
+  $("#mix").value = String(pct);
+  $("#mix-val").textContent = `size ${pct} % \u00b7 speed ${100 - pct} %`;
+  document.querySelectorAll("[data-mix]").forEach((b) =>
+    b.setAttribute("aria-pressed", String(Number(b.dataset.mix) === pct)));
+  try { localStorage.setItem("b2t-mix", String(state.mix)); } catch (_) { /* private mode */ }
+  if (!quiet) render();
+}
+
 function buildStages() {
   const sel = $("#stage");
   sel.innerHTML = "";
@@ -710,6 +785,162 @@ function hideTip() {
   t.setAttribute("aria-hidden", "true");
 }
 
+// --- combined score -------------------------------------------------------
+
+/** Both figures on one scale, and the two combined at the current weighting.
+ *
+ *  Size and speed are measured in different units, so nothing can be added
+ *  until each is a share of the best figure in its own column: base64 at 133 %
+ *  against a winner at 125 % scores 0.94 on size, whatever the other column is
+ *  doing. Both are ratios, so they are combined as a weighted geometric mean
+ *  rather than a weighted sum -- halving the size and halving the time are the
+ *  same size of win, and only the geometric mean says so.
+ */
+function scored(rs) {
+  const bestSize = Math.min(...rs.map((r) => r.size));
+  const bestRel = Math.min(...rs.map((r) => r.rel));
+  const ws = state.mix, wp = 1 - state.mix;
+  return rs.map((r) => {
+    const sizeScore = r.size > 0 ? bestSize / r.size : 0;
+    const speedScore = r.rel > 0 ? bestRel / r.rel : 0;
+    const score = Math.pow(sizeScore, ws) * Math.pow(speedScore, wp);
+    // Only speed carries a measured spread. It reaches the score through its
+    // own weight, so a size-only ranking inherits no noise from a column it is
+    // not counting.
+    const spread = Math.max(r.iqr, speedFloor() * Math.max(r.rel, 1e-9));
+    const noise = r.rel > 0 ? score * wp * (spread / r.rel) : 0;
+    return Object.assign({}, r, {
+      sizeScore: sizeScore, speedScore: speedScore,
+      score: score, scoreNoise: noise,
+    });
+  }).sort((a, b) => b.score - a.score);
+}
+
+/** Two scores are the same result when the gap between them is inside the
+ *  noise, or inside what the page prints: both rounded to the same point is a
+ *  difference no reader can see, and naming a winner over it would be making
+ *  something up. */
+function sameScore(a, b) {
+  return Math.abs(a.score - b.score) <
+    Math.max(a.scoreNoise, b.scoreNoise, 0.005);
+}
+
+const scoreText = (v) => Math.round(v * 100);
+
+// --- rank chart -----------------------------------------------------------
+
+/** One row per codec: rank, name, score, then the size bar and the speed bar
+ *  beside each other on a shared row, so neither has to be held in memory
+ *  while the other is looked up.
+ *
+ *  Below about 600px there is no width for two panels worth reading, and the
+ *  scroller would put the speed column off-screen -- which is the switching
+ *  back and forth this chart exists to remove. So the two bars stack inside
+ *  the row instead: still one block per codec, still both figures at once.
+ */
+function rankChart(data, heads) {
+  const svg = document.getElementById("chart-rank");
+  const avail = svg.parentElement.clientWidth || 720;
+  const compact = avail < 600;
+  const w = compact ? Math.max(avail, 330) : Math.max(avail, 640);
+  // Compact spends its left column on a second line -- name above, score
+  // below -- rather than on a score column a long codec name would run into.
+  const g = compact
+    ? { rowH: 58, bar: 16, top: 10, bot: 8, nameW: 154, scoreW: 0, tagW: 34, gap: 0, valW: 56 }
+    : { rowH: 36, bar: 20, top: 42, bot: 10, nameW: 176, scoreW: 56, tagW: 0, gap: 26, valW: 64 };
+  const h = g.top + g.bot + data.length * g.rowH;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("aria-label", "Codecs ranked on size and speed together");
+
+  const left = g.nameW + g.scoreW;
+  // Wide: two panels side by side. Compact: one track, used twice.
+  const panelW = compact ? 0 : (w - left - g.gap) / 2;
+  const trackW = compact
+    ? Math.max(w - left - g.tagW - g.valW - 6, 60)
+    : Math.max(panelW - g.valW, 70);
+  const px = compact
+    ? [left + g.tagW, left + g.tagW]
+    : [left, left + panelW + g.gap];
+
+  const parts = [];
+  if (!compact) {
+    parts.push(
+      `<text class="panel-head" x="${px[0]}" y="${g.top - 18}">${heads[0]}</text>`,
+      `<text class="panel-head" x="${px[1]}" y="${g.top - 18}">${heads[1]}</text>`,
+      `<text class="panel-head" x="${left - 8}" y="${g.top - 18}" text-anchor="end">SCORE</text>`
+    );
+  }
+
+  data.forEach((d, i) => {
+    const y = g.top + i * g.rowH;
+    // A tied row carries a second line, so its name sits a little high and the
+    // two lines centre as a block against the bars.
+    const ny = compact ? y + 20 : y + g.rowH / 2 + (d.tied ? -1 : 4);
+    const nx = compact ? 41 : 45;
+    if (i === 0) {
+      parts.push(`<rect class="rank-lead" x="0" y="${y}" width="${w}" height="${g.rowH}" rx="5"/>`);
+    }
+    parts.push(
+      `<text class="rank-num" x="10" y="${ny}">${i + 1}</text>`,
+      `<rect x="${compact ? 26 : 30}" y="${ny - 9}" width="9" height="9" rx="2" fill="${d.color}"/>`,
+      `<text class="rank-name${compact ? " sm" : ""}" x="${nx}" y="${ny}">${d.label}</text>`
+    );
+    if (compact) {
+      parts.push(`<text class="rank-score" x="${nx}" y="${ny + 18}">${d.score}</text>`);
+      if (d.tied) {
+        parts.push(`<text class="rank-tie" x="${nx + 34}" y="${ny + 18}">tied with 1</text>`);
+      }
+    } else {
+      parts.push(`<text class="rank-score" x="${left - 8}" y="${ny}" text-anchor="end">${d.score}</text>`);
+      if (d.tied) {
+        parts.push(`<text class="rank-tie" x="${nx}" y="${ny + 12}">tied with 1</text>`);
+      }
+    }
+    d.bars.forEach((b, k) => {
+      const by = compact
+        ? y + 7 + k * (g.bar + 6)
+        : y + (g.rowH - g.bar) / 2;
+      const len = Math.max(trackW * Math.min(Math.max(b.frac, 0), 1), 3);
+      if (compact) {
+        parts.push(`<text class="panel-head" x="${left + g.tagW - 7}" y="${by + g.bar / 2 + 4}" text-anchor="end">${b.tag}</text>`);
+      }
+      parts.push(
+        `<rect class="track" x="${px[k]}" y="${by}" width="${trackW}" height="${g.bar}" rx="4"/>`,
+        `<rect x="${px[k]}" y="${by}" width="${len}" height="${g.bar}" rx="4" fill="${d.color}"/>`,
+        `<rect x="${px[k]}" y="${by}" width="${Math.min(4, len)}" height="${g.bar}" fill="${d.color}"/>`,
+        `<text class="rank-val" x="${px[k] + trackW + 8}" y="${by + g.bar / 2 + 4}">${b.text}</text>`
+      );
+    });
+    parts.push(`<rect class="hit" x="0" y="${y}" width="${w}" height="${g.rowH}" data-i="${i}"/>`);
+  });
+
+  svg.innerHTML = parts.join("");
+  svg.querySelectorAll(".hit").forEach((el) => {
+    el.addEventListener("pointerenter", (e) => showTip(e, data[+el.dataset.i].tip));
+    el.addEventListener("pointermove", moveTip);
+    el.addEventListener("pointerleave", hideTip);
+  });
+}
+
+function rankTip(r, base) {
+  const pct = base ? (r.size / base.size - 1) * 100 : 0;
+  const note = CODEC_NOTE[r.key] ? `<br><span class="k">${CODEC_NOTE[r.key]}</span>` : "";
+  return `<b>${r.key}</b>${note}<br>` +
+    `<span class="k">score at ${Math.round(state.mix * 100)} % size / ` +
+    `${Math.round((1 - state.mix) * 100)} % speed:</span> ${scoreText(r.score)}<br>` +
+    `<span class="k">size:</span> ${pctSize(r.size)} ` +
+    `(${pct >= 0 ? "+" : ""}${pct.toFixed(1)} % vs ${state.data.meta.baseline}), ` +
+    `${Math.round(r.sizeScore * 100)} % of the best<br>` +
+    `<span class="k">${state.dir}:</span> ${speedText(r.rel)} ` +
+    `\u00b1${fmt(r.iqr / 2, 3)}\u00d7, ${Math.round(r.speedScore * 100)} % of the best` +
+    (r.native && !state.total
+      ? `<br><span class="k">compression is inside this codec, so this figure ` +
+        `carries it either way</span>`
+      : "");
+}
+
 // --- render ---------------------------------------------------------------
 
 function render() {
@@ -753,7 +984,29 @@ function render() {
     tick: (v) => v.toFixed(1) + "\u00d7",
   });
 
-  renderTable(rs, base, speedSorted[0]);
+  const ranked = scored(rs);
+  // The column heads stay short enough to survive a narrow window; what the
+  // controls currently mean is said once, in the sub-heading, where there is
+  // room for a sentence.
+  const speedHead = (state.dir === "encode" ? "ENCODE" : "DECODE") +
+    " \u2014 \u00d7 " + baseName.toUpperCase();
+  $("#rank-sub").textContent =
+    "Size " + (state.size === "json" ? "inside a JSON string" : "before escaping") +
+    ", " + state.dir + " time " +
+    (state.total ? "with compression" : "for the codec alone") +
+    " against " + baseName + ". Longer is better in both columns.";
+  rankChart(ranked.map((r) => ({
+    label: r.key, color: state.hue[r.key], score: scoreText(r.score),
+    tied: r !== ranked[0] && sameScore(r, ranked[0]),
+    bars: [
+      { frac: r.sizeScore, text: pctSize(r.size), tag: "SIZE" },
+      { frac: r.speedScore, text: speedText(r.rel),
+        tag: state.dir === "encode" ? "ENC" : "DEC" },
+    ],
+    tip: rankTip(r, base),
+  })), ["SIZE \u2014 % OF INPUT", speedHead]);
+
+  renderTable(ranked, base, speedSorted[0]);
   renderCategoryTable(rs);
   renderMeta();
 }
@@ -793,20 +1046,24 @@ function tied(a, b) {
   return Math.abs(a.rel - b.rel) < noise;
 }
 
+/** `rs` arrives in score order, so the table reads down in the same order as
+ *  the ranking above it -- a reader checking a row against the chart should not
+ *  have to find it again. */
 function renderTable(rs, base, fastest) {
-  const sorted = [...rs].sort((a, b) => a.size - b.size);
+  const sorted = rs;
   // Mark what the reader sees, not what the float says. Two rows that both
   // print 74.2 % differ somewhere the table does not show, and calling one of
   // them the winner over a difference nobody can read is worse than calling
   // neither. The comment applies the same rule to its bold cells.
   const sizeCells = sorted.map((r) => pctSize(r.size));
   const speedCells = sorted.map((r) => speedText(r.rel));
-  const bestSize = sizeCells.length ? sizeCells[0] : null;
+  const bestSize = sizeCells.length
+    ? pctSize(Math.min(...sorted.map((r) => r.size))) : null;
   const bestSpeed = fastest ? speedText(fastest.rel) : null;
   const baseName = state.data.meta.baseline;
 
   const head = `<thead><tr>
-    <th>Codec</th><th>Share of input</th><th>vs ${baseName}</th>
+    <th>#</th><th class="lbl">Codec</th><th>Score</th><th>Share of input</th><th>vs ${baseName}</th>
     <th>Escaped chars</th><th>${state.dir} vs ${baseName}</th><th>Spread</th>
     </tr></thead>`;
   const body = sorted.map((r, i) => {
@@ -814,7 +1071,10 @@ function renderTable(rs, base, fastest) {
     const esc = Object.values(r.perCat).reduce((a, c) => a + c.escapes, 0);
     const isTied = fastest && r !== fastest && tied(r, fastest);
     return `<tr>
-      <td><span class="swatch" style="background:${state.hue[r.key]}"></span>${r.key}</td>
+      <td class="num">${i + 1}</td>
+      <td class="lbl"><span class="swatch" style="background:${state.hue[r.key]}"></span>${r.key}</td>
+      <td class="num ${i === 0 ? "best" : ""}">${scoreText(r.score)}${
+        i && sameScore(r, sorted[0]) ? '<span class="tie">tied</span>' : ""}</td>
       <td class="num ${sizeCells[i] === bestSize ? "best" : ""}">${sizeCells[i]}</td>
       <td class="num ${pct > 0 ? "worse" : ""}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</td>
       <td class="num">${esc ? esc.toLocaleString() : "none"}</td>
@@ -886,6 +1146,19 @@ function wire() {
   $("#reset-weights").addEventListener("click", () => {
     applyProfile(); syncWeightControls(); render();
   });
+
+  $("#mix").addEventListener("input", (e) => setMix(Number(e.target.value) / 100));
+  document.querySelectorAll("[data-mix]").forEach((b) => {
+    b.addEventListener("click", () => setMix(Number(b.dataset.mix) / 100));
+  });
+  try {
+    // Nothing stored reads back as null, and Number(null) is a perfectly
+    // finite zero -- which would silently open the page on speed alone.
+    const raw = localStorage.getItem("b2t-mix");
+    const saved = raw === null ? NaN : Number(raw);
+    if (Number.isFinite(saved) && saved >= 0 && saved <= 1) state.mix = saved;
+  } catch (_) { /* private mode, or site data blocked */ }
+  setMix(state.mix, true);
 
   for (const [attr, key, cast] of [["size", "size", String], ["dir", "dir", String],
                                    ["total", "total", (v) => v === "1"]]) {

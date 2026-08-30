@@ -146,6 +146,16 @@ escaper decide every other number, so being wrong there would be invisible.
 
 ## The page
 
+Above the size and speed charts, the page ranks the codecs on both figures at
+once: one row per codec, the size bar and the speed bar beside each other, and
+a slider for how much of the ranking is size rather than speed. Each bar is
+that codec against the best figure in its own column, which is what puts a per
+cent and a multiple on one scale; the score is those two shares combined as a
+weighted geometric mean, so halving the size and halving the time count as the
+same size of win. Two scores whose gap is inside the measured spread are marked
+tied rather than ordered — the rule the pull-request comment already applies to
+whether a run changed anything.
+
 `site/` is deployed to <https://bench.ghadami.de> as a Cloudflare Worker with
 static assets — `wrangler.jsonc` is the whole configuration, and there is no
 build step to set:
