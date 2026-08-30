@@ -159,9 +159,17 @@ the measured spread are marked tied rather than ordered — the rule the
 pull-request comment already applies to whether a run changed anything.
 
 Two of the five factors are measured on every run. Three are not, and could not
-be: whether the encoding has a DP mode that leaves printable text readable in
-its output, how far a decoder already ships, and whether the format is still
-allowed to change. Inventing measurements for those would be worse than
+be: whether the output stays readable, how far a decoder already ships, and
+whether the format is still allowed to change. Readable output is direct
+passthrough — bytes already valid in the alphabet go into the output unchanged,
+a substitution alphabet carries a few more through 1:1, and a length signal in
+front of each run says how far it reaches — and the rating is not whether a
+codec has the mechanism but whether a payload can be read without decoding it.
+Base85N prefers DP because readable output is a stated goal, and rates full;
+Base91z has the mode but enters it on efficiency grounds where compression is
+not an option, so readability falls out of short values as a side effect and
+rates 0.1, because a debugging story cannot be built on a mode that only
+happens to trigger. Inventing measurements for those would be worse than
 admitting they are judgements, so each is a short ladder of tiers, every tier
 states the fact that puts a codec on it — an RFC, a format that carries it, a
 0.x version number — and the page writes the whole ladder out under the chart.

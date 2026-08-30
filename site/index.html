@@ -268,7 +268,7 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
   <p class="note" style="margin-top:0">How much each factor matters to you, one
   slider each. They are not a see-saw: two factors both at 100 are equally
   important to each other, and a third at 40 is worth less than either &mdash;
-  which is the only way to say that plain-text readability matters to you
+  which is the only way to say that readable output matters to you
   <em>as well as</em> size, rather than instead of it. A factor at zero drops
   out of the score and out of the chart.</p>
 
@@ -400,13 +400,25 @@ const PROFILE_TEXT = {
 // fact that puts a codec on it. Argue with a tier, not with a number nobody can
 // check.
 
+// DP is direct passthrough: bytes already valid in the codec's alphabet are
+// carried into the output unchanged, substitution alphabets carry a few
+// otherwise-invalid ones through 1:1 as well, and a length signal in front of
+// each passthrough run says how far it reaches. What the rating is about is not
+// whether the mechanism exists but whether a reader can count on it: the point
+// of readable output is that nobody has to decode a payload to debug it, and a
+// mode that only happens to trigger buys none of that.
 const PLAIN = {
-  yes: { v: 1, short: "yes",
-    why: "has a DP mode: printable text survives into the encoded output, so a " +
-         "payload can still be read on the wire" },
-  no: { v: 0, short: "no",
-    why: "encodes every input the same way; nothing of the input is readable in " +
-         "the output" },
+  design: { v: 1, short: "by design",
+    why: "prefers DP for readability \u2014 output a person can read is a stated " +
+         "goal of the format, so it is what you get rather than what you might " +
+         "get" },
+  chance: { v: 0.1, short: "incidental",
+    why: "has a DP mode but enters it on efficiency grounds, where compression " +
+         "is not an option; readable output falls out of short values as a side " +
+         "effect, which is not something a debugging story can be built on" },
+  none: { v: 0, short: "no",
+    why: "no passthrough: every input is encoded the same way, and nothing of it " +
+         "is readable in the output" },
 };
 
 const REACH = {
@@ -442,14 +454,14 @@ const STABLE = {
 // Bottom tier everywhere is what an unknown codec inherits, which is the safe
 // direction: a page that has never heard of it should not be vouching for it.
 const TRAITS = {
-  "base64":         { plain: PLAIN.no,  reach: REACH.stdlib, stable: STABLE.rfc },
-  "ascii85":        { plain: PLAIN.no,  reach: REACH.format, stable: STABLE.spec },
-  "base91-classic": { plain: PLAIN.no,  reach: REACH.ported, stable: STABLE.aged },
-  "base85n":        { plain: PLAIN.yes, reach: REACH.single, stable: STABLE.pre1 },
-  "base91z":        { plain: PLAIN.no,  reach: REACH.single, stable: STABLE.pre1 },
-  "base94max":      { plain: PLAIN.no,  reach: REACH.single, stable: STABLE.pre1 },
+  "base64":         { plain: PLAIN.none,   reach: REACH.stdlib, stable: STABLE.rfc },
+  "ascii85":        { plain: PLAIN.none,   reach: REACH.format, stable: STABLE.spec },
+  "base91-classic": { plain: PLAIN.none,   reach: REACH.ported, stable: STABLE.aged },
+  "base85n":        { plain: PLAIN.design, reach: REACH.single, stable: STABLE.pre1 },
+  "base91z":        { plain: PLAIN.chance, reach: REACH.single, stable: STABLE.pre1 },
+  "base94max":      { plain: PLAIN.none,   reach: REACH.single, stable: STABLE.pre1 },
 };
-const UNKNOWN_TRAITS = { plain: PLAIN.no, reach: REACH.single, stable: STABLE.pre1 };
+const UNKNOWN_TRAITS = { plain: PLAIN.none, reach: REACH.single, stable: STABLE.pre1 };
 const traitsOf = (codec) => TRAITS[codec] || UNKNOWN_TRAITS;
 
 /** The factors a reader can weigh. Two are measured on every run; three are
@@ -464,15 +476,23 @@ const CRITERIA = [
     head: () => (state.dir === "encode" ? "ENCODE" : "DECODE") +
                 " \u2014 \u00d7 " + state.data.meta.baseline.toUpperCase(),
     about: "time against the baseline codec" },
-  { key: "plain", label: "Plain text", measured: false, tag: () => "DP",
-    head: () => "PLAIN TEXT (DP MODE)",
-    about: "can leave readable text readable" },
+  { key: "plain", label: "Readable output", measured: false, tag: () => "DP",
+    head: () => "READABLE OUTPUT (DP)",
+    about: "Direct passthrough: bytes already valid in the alphabet go into " +
+           "the output unchanged, a substitution alphabet carries a few more " +
+           "through 1:1, and a length signal in front of each run says how far " +
+           "it reaches. The rating is not whether a codec has the mechanism " +
+           "but whether a payload can be read without decoding it \u2014 the " +
+           "debugging time that saves is the whole point, and a mode that only " +
+           "happens to trigger saves none of it." },
   { key: "reach", label: "Adoption", measured: false, tag: () => "REACH",
     head: () => "ADOPTION",
-    about: "how far a decoder already ships" },
+    about: "How far a decoder already ships: whether the other end can read " +
+           "this without taking a dependency first." },
   { key: "stable", label: "Stability", measured: false, tag: () => "STABLE",
     head: () => "STABILITY",
-    about: "whether the format may still change" },
+    about: "Whether the format is still allowed to change under something " +
+           "already deployed." },
 ];
 
 const PRESETS = {
@@ -801,7 +821,7 @@ function renderTraitKey() {
       row.who.push(name);
     }
     tiers.sort((a, b) => b.t.v - a.t.v);
-    parts.push(`<h4>${c.label}</h4><ul>` + tiers.map((row) =>
+    parts.push(`<h4>${c.label}</h4><p class="note">${c.about}</p><ul>` + tiers.map((row) =>
       `<li><b>${row.t.short}</b> <span class="mono">(${row.t.v})</span> &mdash; ` +
       `${row.t.why}<br><span class="mono">${row.who.join(", ")}</span></li>`
     ).join("") + `</ul>`);
@@ -963,7 +983,7 @@ function hideTip() {
  *
  *  Nothing can be added until each factor is a share of the best there is:
  *  base64 at 133 % against a winner at 125 % scores 0.94 on size, and a codec
- *  without a DP mode scores 0 on plain text. The score is the weighted mean of
+ *  with no readable-output mode scores 0 there. The score is the weighted mean of
  *  those shares, so a factor at 40 against two at 100 is worth what its slider
  *  says, and a codec missing a factor loses exactly the share that factor was
  *  given -- not the whole ranking, which is what multiplying them would do.
@@ -1291,7 +1311,7 @@ function renderTable(rs, base, fastest) {
   const head = `<thead><tr>
     <th>#</th><th class="lbl">Codec</th><th>Score</th><th>Share of input</th><th>vs ${baseName}</th>
     <th>Escaped chars</th><th>${state.dir} vs ${baseName}</th><th>Spread</th>
-    <th>DP</th><th>Adoption</th><th>Stability</th>
+    <th>Readable</th><th>Adoption</th><th>Stability</th>
     </tr></thead>`;
   const body = sorted.map((r, i) => {
     const pct = base ? (r.size / base.size - 1) * 100 : 0;
