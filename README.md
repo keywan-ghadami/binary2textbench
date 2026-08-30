@@ -146,6 +146,46 @@ escaper decide every other number, so being wrong there would be invisible.
 
 ## The page
 
+Above the size and speed charts, the page ranks the codecs on every factor at
+once: one row per codec, one bar per factor beside each other, and a slider per
+factor for how much it matters. The sliders are not shares of a fixed hundred
+and not a see-saw — two factors both at 100 are equally important to each
+other, which is the only way to say that readable output matters *as well as*
+size rather than instead of it. Each bar is that codec against the best there
+is in its own column, which is what puts a per cent, a multiple and a rating on
+one scale, and the score is those bars averaged at the weights: a codec missing
+a factor loses that factor's share and no more. Two scores whose gap is inside
+the measured spread are marked tied rather than ordered — the rule the
+pull-request comment already applies to whether a run changed anything.
+
+Two of the six factors are measured on every run. Four are not, and could not
+be: whether the output stays readable, whether the containers that carry it —
+a JSON string, a URL, a cookie value, an HTML attribute — take it without
+escaping, how far a decoder already ships, and whether the format is still
+allowed to change. Readable output is direct
+passthrough — bytes already valid in the alphabet go into the output unchanged,
+a substitution alphabet carries a few more through 1:1, and a length signal in
+front of each run says how far it reaches — and the rating is not whether a
+codec has the mechanism but whether a payload can be read without decoding it.
+Base85N prefers DP because readable output is a stated goal, and rates full;
+Base91z has the mode but enters it on efficiency grounds where compression is
+not an option, so readability falls out of short values as a side effect and
+rates 0.1, because a debugging story cannot be built on a mode that only
+happens to trigger. Container fit is the other half of the same question: the
+escaped-character column measures what a JSON string costs, but a URL, a cookie
+and an HTML attribute each draw the line somewhere else, so the tiers run from
+base64 — URL-safe by RFC, unescaped in all four — through the JSON-safe
+alphabets down to the ones every container has to escape. Inventing measurements for those would be worse than
+admitting they are judgements, so each is a short ladder of tiers, every tier
+states the fact that puts a codec on it — an RFC, a format that carries it, a
+0.x version number — and the page writes the whole ladder out under the chart.
+They start at zero weight: the page will not weigh them for a reader who has
+not asked it to. A codec the page has not heard of lands in the bottom tier of
+each, which is the safe direction. The tiers live in `site/index.html` beside
+the rest of the page's copy, because they are a claim about the world rather
+than a measurement of it, and the file that gets regenerated every run is not
+where a claim should live.
+
 `site/` is deployed to <https://bench.ghadami.de> as a Cloudflare Worker with
 static assets — `wrangler.jsonc` is the whole configuration, and there is no
 build step to set:

@@ -111,10 +111,43 @@ details.weights summary { cursor: pointer; font-size: 0.85rem; color: var(--ink-
 .wrow .val { font-size: 0.78rem; color: var(--muted); text-align: right; }
 .wrow input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--bar); }
 
+/* --- the combined ranking: one row per codec, both bars beside each other --- */
+.factors { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 8px 22px; margin: 4px 0 20px; }
+.frow { display: grid; grid-template-columns: 1fr 40px; align-items: center; gap: 6px; }
+.frow label { font-size: 0.82rem; color: var(--ink); font-weight: 600; }
+.frow .val { font-size: 0.78rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.frow input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--bar); margin: 0; }
+.frow.off label { color: var(--muted); font-weight: 500; }
+.chip {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--axis); border-radius: 3px; padding: 0 4px;
+  color: var(--muted); font-weight: 600; margin-left: 5px; vertical-align: 1px;
+}
+.traitkey h4 { font-size: 0.82rem; margin: 12px 0 4px; color: var(--ink); }
+.traitkey ul { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--ink-2); }
+.traitkey li { margin: 2px 0; }
+.traitkey .mono { color: var(--muted); }
+
+.rank-lead { fill: var(--bar); opacity: 0.07; }
+.rank-num { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.rank-name { fill: var(--ink); font-size: 13px; font-weight: 600; }
+/* The compact row gives a name less room than the widest one wants. */
+.rank-name.sm { font-size: 12px; }
+.rank-score { fill: var(--ink); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rank-tie { fill: var(--muted); font-size: 10.5px; }
+.panel-head { fill: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; font-weight: 600; }
+.track { fill: var(--grid); }
+.rank-val { fill: var(--ink-2); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
 /* --- charts --- */
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; }
 .chart-scroll { overflow-x: auto; }
-svg { display: block; max-width: 100%; }
+/* height:auto keeps a scaled-down chart from letterboxing inside the box the
+   height attribute reserved. The ranking opts out of the shrink entirely: two
+   panels of bars at 60 % of their width are unreadable, and the scroller
+   around it is there for exactly this. */
+svg { display: block; max-width: 100%; height: auto; }
+#chart-rank { max-width: none; }
 .bar-label {
   fill: var(--ink); font-size: 12px; font-weight: 600;
   /* The baseline marker runs behind these, and a dashed line through a digit is
@@ -136,7 +169,7 @@ svg { display: block; max-width: 100%; }
 /* --- table --- */
 table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
 th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-th:first-child, td:first-child { text-align: left; }
+th:first-child, td:first-child, th.lbl, td.lbl { text-align: left; }
 thead th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 tbody tr:hover { background: color-mix(in srgb, var(--bar) 7%, transparent); }
 td.num { font-variant-numeric: tabular-nums; }
@@ -226,6 +259,35 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
   </details>
 </div>
 
+<div class="card" id="rank-card">
+  <h2>Ranked the way you weigh it</h2>
+  <h3 id="rank-sub"></h3>
+
+  <p class="note" style="margin-top:0">How much each factor matters to you, one
+  slider each. They are not a see-saw: two factors both at 100 are equally
+  important to each other, and a third at 40 is worth less than either &mdash;
+  which is the only way to say that readable output matters to you
+  <em>as well as</em> size, rather than instead of it. A factor at zero drops
+  out of the score and out of the chart.</p>
+
+  <div class="factors" id="factors"></div>
+
+  <div class="chart-scroll"><svg id="chart-rank" role="img"></svg></div>
+  <p class="note" id="rank-note"></p>
+
+  <details class="weights">
+    <summary>Where the unmeasured ratings come from</summary>
+    <p class="note">Size and speed come out of the corpus. These three do not,
+    and a benchmark that quietly invented numbers for them would be worse than
+    one that left them out. So each is a small set of tiers, every tier says
+    what puts a codec in it, and you can disagree with a tier without having to
+    doubt a measurement. A codec this page does not know lands in the bottom
+    tier of each &mdash; the safe direction for something nobody has heard
+    of.</p>
+    <div class="traitkey" id="traitkey"></div>
+  </details>
+</div>
+
 <div class="charts">
   <div class="card">
     <h2>Size</h2>
@@ -248,7 +310,9 @@ ranking is a claim about whose data is being encoded, and only you know that.</p
 
 <div class="card">
   <h2>Every number</h2>
-  <h3>Weighted by the profile above. The table is the accessible view of both charts.</h3>
+  <h3 id="table-sub">Weighted by the profile above, ordered by the score. The
+  last four columns are the declared ratings, not measurements. The table is
+  the accessible view of every chart on this page.</h3>
   <div class="chart-scroll"><table id="table"></table></div>
 </div>
 
@@ -317,6 +381,147 @@ const PROFILE_TEXT = {
   },
 };
 
+// --- what the run cannot measure ------------------------------------------
+// Size and speed come out of the corpus. Three things a reader may weigh just
+// as heavily do not: whether the encoding can leave text readable on the wire,
+// how far it is already deployed, and whether its format is still allowed to
+// change. Inventing a measurement for those would be worse than admitting they
+// are judgements, so each is a short ladder of tiers and every tier carries the
+// fact that puts a codec on it. Argue with a tier, not with a number nobody can
+// check.
+
+// DP is direct passthrough: bytes already valid in the codec's alphabet are
+// carried into the output unchanged, substitution alphabets carry a few
+// otherwise-invalid ones through 1:1 as well, and a length signal in front of
+// each passthrough run says how far it reaches. What the rating is about is not
+// whether the mechanism exists but whether a reader can count on it: the point
+// of readable output is that nobody has to decode a payload to debug it, and a
+// mode that only happens to trigger buys none of that.
+const PLAIN = {
+  design: { v: 1, short: "by design",
+    why: "prefers DP for readability \u2014 output a person can read is a stated " +
+         "goal of the format, so it is what you get rather than what you might " +
+         "get" },
+  chance: { v: 0.1, short: "incidental",
+    why: "has a DP mode but enters it on efficiency grounds, where compression " +
+         "is not an option; readable output falls out of short values as a side " +
+         "effect, which is not something a debugging story can be built on" },
+  none: { v: 0, short: "no",
+    why: "no passthrough: every input is encoded the same way, and nothing of it " +
+         "is readable in the output" },
+};
+
+// What carries the encoded form in practice is not a file but a container: a
+// JSON string, a URL, a cookie value, an HTML attribute. Each has characters it
+// treats as its own, and an alphabet that uses them has to be escaped, which
+// costs size on every hop and breaks whatever forgot to escape it. Part of this
+// is measured -- the escaped-character column in the table counts what JSON has
+// to escape -- but a URL, a cookie and an HTML attribute each draw the line
+// somewhere else, and no corpus of ours settles where.
+const CONTAIN = {
+  any: { v: 1, short: "anywhere",
+    why: "the same RFC defines a URL- and filename-safe variant, and the plain " +
+         "alphabet needs no escaping in a JSON string, in HTML text or in a " +
+         "cookie value" },
+  json_html: { v: 0.6, short: "json, html",
+    why: "an alphabet picked so a JSON string needs no escaping, and HTML text " +
+         "carries it as-is; a URL or a cookie value still has to " +
+         "percent-encode part of it" },
+  json: { v: 0.4, short: "json only",
+    why: "usable inside a JSON document and not much beyond it" },
+  escaped: { v: 0.1, short: "escaped",
+    why: "the alphabet contains characters the containers treat as their own " +
+         "-- quotes, backslashes and the rest -- so every hop escapes it; the " +
+         "escaped-character column in the table below counts what that costs " +
+         "inside JSON alone" },
+};
+
+const REACH = {
+  stdlib: { v: 1, short: "everywhere",
+    why: "specified by an RFC and shipped in the standard library of essentially " +
+         "every language; a decoder is already at the other end" },
+  format: { v: 0.6, short: "in formats",
+    why: "carried by published formats (PostScript and PDF) and shipped in " +
+         "several standard libraries" },
+  ported: { v: 0.3, short: "ported",
+    why: "one reference implementation, ported by third parties for twenty " +
+         "years, but never specified anywhere" },
+  single: { v: 0.1, short: "one impl",
+    why: "one implementation, no independent port, no specification: whoever " +
+         "decodes this has to take your library" },
+};
+
+const STABLE = {
+  rfc: { v: 1, short: "RFC",
+    why: "frozen by RFC 4648; the alphabet cannot change under an existing " +
+         "deployment" },
+  spec: { v: 0.8, short: "in a spec",
+    why: "frozen by the formats that carry it \u2014 changing it would break every " +
+         "PDF ever written" },
+  aged: { v: 0.6, short: "unchanged",
+    why: "no specification, but the 2005 reference implementation has not moved " +
+         "since" },
+  pre1: { v: 0.3, short: "pre-1.0",
+    why: "a 0.x version: the format is still allowed to change, and this run " +
+         "pins a commit rather than a release" },
+};
+
+// Bottom tier everywhere is what an unknown codec inherits, which is the safe
+// direction: a page that has never heard of it should not be vouching for it.
+const TRAITS = {
+  "base64":         { plain: PLAIN.none,   contain: CONTAIN.any,       reach: REACH.stdlib, stable: STABLE.rfc },
+  "ascii85":        { plain: PLAIN.none,   contain: CONTAIN.escaped,   reach: REACH.format, stable: STABLE.spec },
+  "base91-classic": { plain: PLAIN.none,   contain: CONTAIN.escaped,   reach: REACH.ported, stable: STABLE.aged },
+  "base85n":        { plain: PLAIN.design, contain: CONTAIN.json_html, reach: REACH.single, stable: STABLE.pre1 },
+  "base91z":        { plain: PLAIN.chance, contain: CONTAIN.json,      reach: REACH.single, stable: STABLE.pre1 },
+  "base94max":      { plain: PLAIN.none,   contain: CONTAIN.escaped,   reach: REACH.single, stable: STABLE.pre1 },
+};
+const UNKNOWN_TRAITS = { plain: PLAIN.none, contain: CONTAIN.escaped,
+                         reach: REACH.single, stable: STABLE.pre1 };
+const traitsOf = (codec) => TRAITS[codec] || UNKNOWN_TRAITS;
+
+/** The factors a reader can weigh. Two are measured on every run; three are
+ *  declared above. Heads and tags are functions because the measured two are
+ *  named by the controls -- encode or decode, with compression or without. */
+const CRITERIA = [
+  { key: "size", label: "Size", measured: true, tag: () => "SIZE",
+    head: () => "SIZE \u2014 % OF INPUT", shead: () => "SIZE %",
+    about: "share of the input the encoded form takes" },
+  { key: "speed", label: "Speed", measured: true,
+    tag: () => (state.dir === "encode" ? "ENC" : "DEC"),
+    head: () => (state.dir === "encode" ? "ENCODE" : "DECODE") +
+                " \u2014 \u00d7 " + state.data.meta.baseline.toUpperCase(),
+    shead: () => (state.dir === "encode" ? "ENCODE \u00d7" : "DECODE \u00d7"),
+    about: "time against the baseline codec" },
+  { key: "plain", label: "Readable output", measured: false, tag: () => "DP",
+    head: () => "READABLE OUTPUT (DP)", shead: () => "READABLE",
+    about: "Direct passthrough: bytes already valid in the alphabet go into " +
+           "the output unchanged, a substitution alphabet carries a few more " +
+           "through 1:1, and a length signal in front of each run says how far " +
+           "it reaches. The rating is not whether a codec has the mechanism " +
+           "but whether a payload can be read without decoding it \u2014 the " +
+           "debugging time that saves is the whole point, and a mode that only " +
+           "happens to trigger saves none of it." },
+  { key: "contain", label: "Container fit", measured: false, tag: () => "FIT",
+    head: () => "CONTAINER FIT", shead: () => "CONTAINER",
+    about: "What actually carries the encoded form is a JSON string, a URL, a " +
+           "cookie value, an HTML attribute \u2014 each with characters it " +
+           "treats as its own. An alphabet that uses them gets escaped on " +
+           "every hop, which costs size the size column never sees and breaks " +
+           "whatever forgot to escape it. The escaped-character column in the " +
+           "table below measures the JSON half of this; a URL and a cookie " +
+           "draw the line elsewhere, which is why the rating is a judgement " +
+           "and not a measurement." },
+  { key: "reach", label: "Adoption", measured: false, tag: () => "REACH",
+    head: () => "ADOPTION",
+    about: "How far a decoder already ships: whether the other end can read " +
+           "this without taking a dependency first." },
+  { key: "stable", label: "Stability", measured: false, tag: () => "STABLE",
+    head: () => "STABILITY",
+    about: "Whether the format is still allowed to change under something " +
+           "already deployed." },
+];
+
 // Colour follows the entity, never its rank: a codec keeps its hue when the
 // sort order changes or a filter drops one of its neighbours. A codec this map
 // does not know takes the next slot rather than rendering invisible.
@@ -348,6 +553,11 @@ const SPEED_FLOOR = 0.08;
 const state = {
   data: null, shaped: null, profile: null, stage: null,
   size: "json", dir: "encode", total: true,
+  // How much each factor matters, 0..100 each and independent of the others.
+  // Not shares of a fixed hundred: "size and speed both matter to me, and
+  // readable output matters half as much" is a thing a reader needs to be able
+  // to say, and a see-saw between two of them cannot say it.
+  w: { size: 100, speed: 100, plain: 0, contain: 0, reach: 0, stable: 0 },
   weights: {}, pairs: [], label: {}, index: {}, hue: {},
 };
 
@@ -495,6 +705,8 @@ function init() {
 
   buildProfiles();
   buildStages();
+  buildFactorControls();
+  renderTraitKey();
   wire();
   render();
 }
@@ -560,6 +772,67 @@ function syncWeightControls() {
       $("#wv-" + id).textContent = state.weights[key];
     }
   }
+}
+
+/** The one place a factor weight is written.
+ *  `quiet` is for the initial read, where render() has not run yet. */
+function setWeight(key, v, quiet) {
+  state.w[key] = Math.min(Math.max(Math.round(v), 0), 100);
+  syncFactorControls();
+  try { localStorage.setItem("b2t-w", JSON.stringify(state.w)); } catch (_) { /* private mode */ }
+  if (!quiet) render();
+}
+
+function buildFactorControls() {
+  const box = $("#factors");
+  box.innerHTML = "";
+  for (const c of CRITERIA) {
+    const row = document.createElement("div");
+    row.className = "frow";
+    row.id = "f-" + c.key;
+    row.innerHTML =
+      `<label for="w-${c.key}">${c.label}` +
+      `<span class="chip">${c.measured ? "measured" : "declared"}</span></label>` +
+      `<span class="val" id="wv-${c.key}">${state.w[c.key]}</span>` +
+      `<input type="range" id="w-${c.key}" min="0" max="100" step="5" ` +
+      `value="${state.w[c.key]}" aria-label="How much ${c.label} matters">`;
+    row.querySelector("input").addEventListener("input", (e) =>
+      setWeight(c.key, Number(e.target.value)));
+    box.append(row);
+  }
+}
+
+function syncFactorControls() {
+  for (const c of CRITERIA) {
+    const el = $("#w-" + c.key);
+    if (!el) continue;
+    el.value = String(state.w[c.key]);
+    $("#wv-" + c.key).textContent = state.w[c.key];
+    $("#f-" + c.key).classList.toggle("off", !state.w[c.key]);
+  }
+}
+
+/** The tiers, and who is on each. Written out rather than left in a tooltip:
+ *  these are the numbers on this page that nobody measured, so they are the
+ *  ones that have to be readable without hovering anything. */
+function renderTraitKey() {
+  const codecs = state.data.codecs;
+  const parts = [];
+  for (const c of CRITERIA.filter((x) => !x.measured)) {
+    const tiers = [];
+    for (const name of codecs) {
+      const t = traitsOf(name)[c.key];
+      let row = tiers.find((x) => x.t === t);
+      if (!row) tiers.push((row = { t: t, who: [] }));
+      row.who.push(name);
+    }
+    tiers.sort((a, b) => b.t.v - a.t.v);
+    parts.push(`<h4>${c.label}</h4><p class="note">${c.about}</p><ul>` + tiers.map((row) =>
+      `<li><b>${row.t.short}</b> <span class="mono">(${row.t.v})</span> &mdash; ` +
+      `${row.t.why}<br><span class="mono">${row.who.join(", ")}</span></li>`
+    ).join("") + `</ul>`);
+  }
+  $("#traitkey").innerHTML = parts.join("");
 }
 
 function buildStages() {
@@ -710,6 +983,213 @@ function hideTip() {
   t.setAttribute("aria-hidden", "true");
 }
 
+// --- combined score -------------------------------------------------------
+
+/** Every factor on one scale, and all of them combined at the current weights.
+ *
+ *  Nothing can be added until each factor is a share of the best there is:
+ *  base64 at 133 % against a winner at 125 % scores 0.94 on size, and a codec
+ *  with no readable-output mode scores 0 there. The score is the weighted mean of
+ *  those shares, so a factor at 40 against two at 100 is worth what its slider
+ *  says, and a codec missing a factor loses exactly the share that factor was
+ *  given -- not the whole ranking, which is what multiplying them would do.
+ */
+function scored(rs) {
+  const bestSize = Math.min(...rs.map((r) => r.size));
+  const bestRel = Math.min(...rs.map((r) => r.rel));
+  const wSum = CRITERIA.reduce((a, c) => a + (state.w[c.key] || 0), 0);
+  return rs.map((r) => {
+    const t = traitsOf(r.key);
+    const val = {
+      size: r.size > 0 ? bestSize / r.size : 0,
+      speed: r.rel > 0 ? bestRel / r.rel : 0,
+      plain: t.plain.v, contain: t.contain.v,
+      reach: t.reach.v, stable: t.stable.v,
+    };
+    const text = {
+      size: pctSize(r.size), speed: speedText(r.rel),
+      plain: t.plain.short, contain: t.contain.short,
+      reach: t.reach.short, stable: t.stable.short,
+    };
+    let acc = 0;
+    for (const c of CRITERIA) acc += (state.w[c.key] || 0) * val[c.key];
+    const score = wSum ? acc / wSum : 0;
+    // Only speed carries a measured spread, and it reaches the score through
+    // its own share of the weights: a ranking that is not counting speed
+    // inherits none of speed's noise.
+    const spread = Math.max(r.iqr, speedFloor() * Math.max(r.rel, 1e-9));
+    const noise = wSum && r.rel > 0
+      ? ((state.w.speed || 0) / wSum) * val.speed * (spread / r.rel)
+      : 0;
+    return Object.assign({}, r, { traits: t, val: val, text: text,
+                                  score: score, scoreNoise: noise });
+    // Ties in the score fall back to size, so a run with nothing weighted at
+    // all still comes out in a defensible order rather than an accidental one.
+  }).sort((a, b) => b.score - a.score || a.size - b.size);
+}
+
+/** Two scores are the same result when the gap between them is inside the
+ *  noise, or inside what the page prints: both rounded to the same point is a
+ *  difference no reader can see, and naming a winner over it would be making
+ *  something up. */
+function sameScore(a, b) {
+  return Math.abs(a.score - b.score) <
+    Math.max(a.scoreNoise, b.scoreNoise, 0.005);
+}
+
+const scoreText = (v) => Math.round(v * 100);
+
+/** The columns the chart draws: the factors being counted. A factor at zero is
+ *  not in the score, so putting it in the chart would be showing a reader a
+ *  bar that moves nothing. With nothing weighted at all the two measured ones
+ *  stand in, because an empty chart says less than a chart with a note. */
+function activeCriteria() {
+  const on = CRITERIA.filter((c) => (state.w[c.key] || 0) > 0);
+  return on.length ? on : CRITERIA.filter((c) => c.measured);
+}
+
+// --- rank chart -----------------------------------------------------------
+
+/** One row per codec: rank, name, score, then one bar per counted factor,
+ *  beside each other on a shared row, so no figure has to be held in memory
+ *  while another is looked up.
+ *
+ *  Below about 600px there is no width for panels worth reading, and the
+ *  scroller would put the later ones off-screen -- which is the switching back
+ *  and forth this chart exists to remove. So the bars stack inside the row
+ *  instead: still one block per codec, still every figure at once.
+ */
+function rankChart(data, cols) {
+  const svg = document.getElementById("chart-rank");
+  const avail = svg.parentElement.clientWidth || 720;
+  const compact = avail < 600;
+  const n = cols.length;
+  // A measured column ends in a figure; a declared one ends in a word, and
+  // "everywhere" needs more room than "1.02x" does.
+  const valW = cols.some((c) => !c.measured) ? (n > 4 ? 74 : 80) : 62;
+  // Six panels do not fit a page-wide card at the width four of them want. The
+  // bars are relative to each other rather than read off an axis, so they lose
+  // less by being short than the card loses by scrolling a column half out of
+  // sight -- and the heads go to their short forms for the same reason.
+  const minTrack = n > 4 ? 48 : 62;
+  const headOf = (c) => (n > 4 && c.shead ? c.shead() : c.head());
+  // Compact gives the row a heading line of its own -- rank, name and score
+  // across the top -- so the bars underneath get the full width. Side by side
+  // there is no room left for the words a declared column ends in.
+  const g = compact
+    ? { bar: 16, top: 8, bot: 8, headH: 26, nameW: 0, scoreW: 0, tagW: 54,
+        gap: 0, valW: valW }
+    : { bar: 20, top: 42, bot: 10, headH: 0, nameW: 176, scoreW: 56, tagW: 0,
+        gap: n > 4 ? 12 : n > 3 ? 16 : 26, valW: valW };
+  g.rowH = compact ? g.headH + n * (g.bar + 6) + 6 : 36;
+  const left = g.nameW + g.scoreW;
+  const w = compact
+    ? Math.max(avail, g.tagW + 4 + minTrack + g.valW + 4)
+    : Math.max(avail, left + n * (minTrack + g.valW) + g.gap * (n - 1));
+  const h = g.top + g.bot + data.length * g.rowH;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.setAttribute("width", w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("aria-label", "Codecs ranked on every counted factor");
+
+  const panelW = compact ? 0 : (w - left - g.gap * (n - 1)) / n;
+  const trackX = g.tagW + 4;
+  const trackW = compact
+    ? Math.max(w - trackX - g.valW - 4, minTrack)
+    : Math.max(panelW - g.valW, minTrack);
+  const px = cols.map((c, k) => compact ? trackX : left + k * (panelW + g.gap));
+
+  const parts = [];
+  if (!compact) {
+    cols.forEach((c, k) => parts.push(
+      `<text class="panel-head" x="${px[k]}" y="${g.top - 18}">${headOf(c)}</text>`));
+    parts.push(
+      `<text class="panel-head" x="${left - 8}" y="${g.top - 18}" text-anchor="end">SCORE</text>`);
+  }
+
+  data.forEach((d, i) => {
+    const y = g.top + i * g.rowH;
+    // Side by side, a tied row carries a second line, so its name sits a little
+    // high and the two lines centre as a block against the bars. Compact has a
+    // heading line already and puts the mark on it.
+    const ny = compact ? y + 17 : y + g.rowH / 2 + (d.tied ? -1 : 4);
+    const nx = compact ? 41 : 45;
+    if (i === 0) {
+      parts.push(`<rect class="rank-lead" x="0" y="${y}" width="${w}" height="${g.rowH}" rx="5"/>`);
+    }
+    parts.push(
+      `<text class="rank-num" x="10" y="${ny}">${i + 1}</text>`,
+      `<rect x="${compact ? 26 : 30}" y="${ny - 9}" width="9" height="9" rx="2" fill="${d.color}"/>`,
+      `<text class="rank-name${compact ? " sm" : ""}" x="${nx}" y="${ny}">${d.label}</text>`
+    );
+    if (compact) {
+      parts.push(`<text class="rank-score" x="${w - 8}" y="${ny}" text-anchor="end">${d.score}</text>`);
+      if (d.tied) {
+        parts.push(`<text class="rank-tie" x="${w - 38}" y="${ny}" text-anchor="end">tied with 1</text>`);
+      }
+    } else {
+      parts.push(`<text class="rank-score" x="${left - 8}" y="${ny}" text-anchor="end">${d.score}</text>`);
+      if (d.tied) {
+        parts.push(`<text class="rank-tie" x="${nx}" y="${ny + 12}">tied with 1</text>`);
+      }
+    }
+    d.bars.forEach((b, k) => {
+      const by = compact
+        ? y + g.headH + k * (g.bar + 6)
+        : y + (g.rowH - g.bar) / 2;
+      const len = Math.max(trackW * Math.min(Math.max(b.frac, 0), 1), 3);
+      if (compact) {
+        parts.push(`<text class="panel-head" x="${g.tagW - 6}" y="${by + g.bar / 2 + 4}" text-anchor="end">${b.tag}</text>`);
+      }
+      parts.push(
+        `<rect class="track" x="${px[k]}" y="${by}" width="${trackW}" height="${g.bar}" rx="4"/>`,
+        `<rect x="${px[k]}" y="${by}" width="${len}" height="${g.bar}" rx="4" fill="${d.color}"${
+          b.declared ? ' opacity="0.75"' : ""}/>`,
+        `<rect x="${px[k]}" y="${by}" width="${Math.min(4, len)}" height="${g.bar}" fill="${d.color}"${
+          b.declared ? ' opacity="0.75"' : ""}/>`,
+        `<text class="rank-val" x="${px[k] + trackW + 8}" y="${by + g.bar / 2 + 4}">${b.text}</text>`
+      );
+    });
+    parts.push(`<rect class="hit" x="0" y="${y}" width="${w}" height="${g.rowH}" data-i="${i}"/>`);
+  });
+
+  svg.innerHTML = parts.join("");
+  svg.querySelectorAll(".hit").forEach((el) => {
+    el.addEventListener("pointerenter", (e) => showTip(e, data[+el.dataset.i].tip));
+    el.addEventListener("pointermove", moveTip);
+    el.addEventListener("pointerleave", hideTip);
+  });
+}
+
+function rankTip(r, base, cols) {
+  const wSum = CRITERIA.reduce((a, c) => a + (state.w[c.key] || 0), 0);
+  const note = CODEC_NOTE[r.key] ? `<br><span class="k">${CODEC_NOTE[r.key]}</span>` : "";
+  const pct = base ? (r.size / base.size - 1) * 100 : 0;
+  const detail = {
+    size: `${pctSize(r.size)} (${pct >= 0 ? "+" : ""}${pct.toFixed(1)} % vs ` +
+          `${state.data.meta.baseline})`,
+    speed: `${speedText(r.rel)} \u00b1${fmt(r.iqr / 2, 3)}\u00d7`,
+    // The tier's word, not its reasoning: the reasoning is a paragraph, it is
+    // the same paragraph on every row that shares the tier, and it is written
+    // out under the chart where it can be read rather than hovered.
+    plain: r.traits.plain.short,
+    contain: r.traits.contain.short,
+    reach: r.traits.reach.short,
+    stable: r.traits.stable.short,
+  };
+  const lines = cols.map((c) => {
+    const share = wSum ? Math.round((state.w[c.key] / wSum) * 100) : 0;
+    return `<span class="k">${c.label} (${share} % of the score):</span> ` +
+      `${detail[c.key]} \u2014 ${Math.round(r.val[c.key] * 100)} % of the best`;
+  }).join("<br>");
+  return `<b>${r.key}</b>${note}<br>` +
+    `<span class="k">score:</span> ${scoreText(r.score)}<br>` + lines +
+    (r.native && !state.total
+      ? `<br><span class="k">compression is inside this codec, so the speed ` +
+        `figure carries it either way</span>`
+      : "");
+}
+
 // --- render ---------------------------------------------------------------
 
 function render() {
@@ -753,7 +1233,40 @@ function render() {
     tick: (v) => v.toFixed(1) + "\u00d7",
   });
 
-  renderTable(rs, base, speedSorted[0]);
+  const ranked = scored(rs);
+  const cols = activeCriteria();
+  const wSum = CRITERIA.reduce((a, c) => a + (state.w[c.key] || 0), 0);
+  // What the controls currently mean is said once, in the sub-heading, where
+  // there is room for a sentence; the column heads stay short enough to
+  // survive a narrow window.
+  $("#rank-sub").textContent = wSum
+    ? "Counting " + cols.map((c) => c.label.toLowerCase()).join(", ") +
+      ". Longer is better in every column."
+    : "Nothing is being counted \u2014 every factor is at zero.";
+  $("#rank-note").innerHTML = wSum
+    ? "Each bar is that codec against the best there is in its own column, so a " +
+      "full bar is the best and a half bar is worth half as much; the figure " +
+      "beside it is the measurement or the rating itself. The score is those " +
+      "bars averaged at the weights above, which is why a codec missing a " +
+      "factor loses that factor's share and no more. Rows the run cannot " +
+      "separate are marked <em>tied</em>. Size and speed follow the controls " +
+      "at the top of the page: profile, compression stage, direction, and what " +
+      "is counted."
+    : "Every factor is at zero, so there is no score to rank on \u2014 the rows " +
+      "below are in size order and the two measured columns are shown for " +
+      "orientation. Raise a slider to rank on it.";
+  rankChart(ranked.map((r) => ({
+    label: r.key, color: state.hue[r.key],
+    score: wSum ? scoreText(r.score) : "\u2014",
+    tied: wSum > 0 && r !== ranked[0] && sameScore(r, ranked[0]),
+    bars: cols.map((c) => ({
+      frac: r.val[c.key], text: r.text[c.key], tag: c.tag(),
+      declared: !c.measured,
+    })),
+    tip: rankTip(r, base, cols),
+  })), cols);
+
+  renderTable(ranked, base, speedSorted[0]);
   renderCategoryTable(rs);
   renderMeta();
 }
@@ -793,34 +1306,46 @@ function tied(a, b) {
   return Math.abs(a.rel - b.rel) < noise;
 }
 
+/** `rs` arrives in score order, so the table reads down in the same order as
+ *  the ranking above it -- a reader checking a row against the chart should not
+ *  have to find it again. */
 function renderTable(rs, base, fastest) {
-  const sorted = [...rs].sort((a, b) => a.size - b.size);
+  const sorted = rs;
   // Mark what the reader sees, not what the float says. Two rows that both
   // print 74.2 % differ somewhere the table does not show, and calling one of
   // them the winner over a difference nobody can read is worse than calling
   // neither. The comment applies the same rule to its bold cells.
   const sizeCells = sorted.map((r) => pctSize(r.size));
   const speedCells = sorted.map((r) => speedText(r.rel));
-  const bestSize = sizeCells.length ? sizeCells[0] : null;
+  const bestSize = sizeCells.length
+    ? pctSize(Math.min(...sorted.map((r) => r.size))) : null;
   const bestSpeed = fastest ? speedText(fastest.rel) : null;
   const baseName = state.data.meta.baseline;
 
   const head = `<thead><tr>
-    <th>Codec</th><th>Share of input</th><th>vs ${baseName}</th>
+    <th>#</th><th class="lbl">Codec</th><th>Score</th><th>Share of input</th><th>vs ${baseName}</th>
     <th>Escaped chars</th><th>${state.dir} vs ${baseName}</th><th>Spread</th>
+    <th>Readable</th><th>Container</th><th>Adoption</th><th>Stability</th>
     </tr></thead>`;
   const body = sorted.map((r, i) => {
     const pct = base ? (r.size / base.size - 1) * 100 : 0;
     const esc = Object.values(r.perCat).reduce((a, c) => a + c.escapes, 0);
     const isTied = fastest && r !== fastest && tied(r, fastest);
     return `<tr>
-      <td><span class="swatch" style="background:${state.hue[r.key]}"></span>${r.key}</td>
+      <td class="num">${i + 1}</td>
+      <td class="lbl"><span class="swatch" style="background:${state.hue[r.key]}"></span>${r.key}</td>
+      <td class="num ${i === 0 ? "best" : ""}">${scoreText(r.score)}${
+        i && sameScore(r, sorted[0]) ? '<span class="tie">tied</span>' : ""}</td>
       <td class="num ${sizeCells[i] === bestSize ? "best" : ""}">${sizeCells[i]}</td>
       <td class="num ${pct > 0 ? "worse" : ""}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)} %</td>
       <td class="num">${esc ? esc.toLocaleString() : "none"}</td>
       <td class="num ${speedCells[i] === bestSpeed ? "best" : ""}">${speedCells[i]}${
         isTied ? '<span class="tie">tied</span>' : ""}</td>
       <td class="num">\u00b1${fmt(r.iqr / 2, 3)}\u00d7</td>
+      <td class="num" title="${r.traits.plain.why}">${r.traits.plain.short}</td>
+      <td class="num" title="${r.traits.contain.why}">${r.traits.contain.short}</td>
+      <td class="num" title="${r.traits.reach.why}">${r.traits.reach.short}</td>
+      <td class="num" title="${r.traits.stable.why}">${r.traits.stable.short}</td>
     </tr>`;
   }).join("");
   $("#table").innerHTML = head + "<tbody>" + body + "</tbody>";
@@ -886,6 +1411,20 @@ function wire() {
   $("#reset-weights").addEventListener("click", () => {
     applyProfile(); syncWeightControls(); render();
   });
+
+  try {
+    // Read key by key: a stored file from an older version of this page knows
+    // nothing about a factor added since, and that factor should keep its
+    // default rather than the page opening with it undefined.
+    const saved = JSON.parse(localStorage.getItem("b2t-w") || "null");
+    if (saved) {
+      for (const c of CRITERIA) {
+        const v = Number(saved[c.key]);
+        if (Number.isFinite(v) && v >= 0 && v <= 100) state.w[c.key] = v;
+      }
+    }
+  } catch (_) { /* private mode, site data blocked, or a file we cannot read */ }
+  syncFactorControls();
 
   for (const [attr, key, cast] of [["size", "size", String], ["dir", "dir", String],
                                    ["total", "total", (v) => v === "1"]]) {
