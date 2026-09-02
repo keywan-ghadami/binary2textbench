@@ -4,6 +4,13 @@
 //! those is eight megabytes, and at eight megabytes both codecs are bound by
 //! memory bandwidth rather than by what they compute -- which is why the large
 //! files say so little about the throughput a caller sees.
+//!
+//! **The size column is against `ceil(4n/3)`, unpadded**, because that is what
+//! §9.4 promises and what a URL query would actually carry. The runner's own
+//! base64 pads, which on a four-byte value is two characters out of eight --
+//! quoting the padded ratio here would credit base65t with 25 % it did not
+//! earn. The timing columns are against the runner's base64, which is the
+//! denominator of every published figure; two `=` cost it nothing measurable.
 use b2t_runner::codecs;
 use base65t::Profile;
 use std::time::Instant;
@@ -57,7 +64,7 @@ fn main() {
         println!(
             "| `{name}` | {} | {:.0} % | {:.0} % | {:.0} % |",
             d.len(),
-            100.0 * dense.len() as f64 / b64.len() as f64,
+            100.0 * dense.len() as f64 / (4 * d.len()).div_ceil(3) as f64,
             100.0 * e0 / e1,
             100.0 * x0 / x1
         );
