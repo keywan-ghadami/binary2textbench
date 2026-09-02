@@ -4,7 +4,7 @@
 
 //! The encodings under test, behind one shape.
 //!
-//! Three come from their own repositories and are built from source, so that
+//! Four come from their own repositories and are built from source, so that
 //! throughput is compared between encodings and not between languages. Three
 //! are implemented here:
 //!
@@ -98,6 +98,28 @@ pub fn all() -> Vec<Codec> {
             note: "Base94Max, adaptive 13/14-bit over all printable ASCII",
             encode: |d| base94max::encode(d),
             decode: |s| base94max::decode(s).map_err(CodecError::from),
+            native: None,
+        },
+        Codec {
+            name: "base65t",
+            note: "Base65t 0.2, Base64URL plus a 65th character; profile U, the \
+                   parameterless default",
+            // `encode`, with no preset and no profile: `dense` and profile U,
+            // which is what §9.3 of its specification says a call without
+            // arguments must give. The other presets trade size for
+            // readability or for random access, and measuring one of those
+            // would be measuring a configuration a caller has to ask for.
+            //
+            // Profile U rather than T although the container here is a JSON
+            // string and T would pass more text through: U is the default, and
+            // it is the one that also goes into a URL and a cookie value
+            // unescaped, which is the claim the format leads with.
+            encode: |d| String::from_utf8(base65t::encode(d)).expect("profile U is ASCII"),
+            decode: |s| {
+                base65t::decode(s.as_bytes(), base65t::Profile::U)
+                    .map(|d| d.bytes)
+                    .map_err(|e| CodecError(e.to_string()))
+            },
             native: None,
         },
         Codec {

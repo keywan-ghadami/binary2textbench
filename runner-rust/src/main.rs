@@ -826,7 +826,7 @@ fn cpu_model() -> String {
 /// Which revision of each codec produced these numbers. Without it a results
 /// file says what happened but not to what.
 fn codec_revisions() -> BTreeMap<String, String> {
-    ["base91z", "base85n", "base94max"]
+    ["base91z", "base85n", "base94max", "base65t"]
         .iter()
         .map(|name| {
             let dir = format!("../codecs/{name}");

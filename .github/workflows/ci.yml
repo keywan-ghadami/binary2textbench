@@ -43,11 +43,17 @@ jobs:
           repository: keywan-ghadami/base94max
           path: base94max
 
+      - name: Check out base65t
+        uses: actions/checkout@v4
+        with:
+          repository: keywan-ghadami/base65t
+          path: base65t
+
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Link the codecs
         working-directory: binary2textbench
-        run: ./scripts/link-codecs.sh ../base91z ../base85n ../base94max
+        run: ./scripts/link-codecs.sh ../base91z ../base85n ../base94max ../base65t
       # Known vectors, round trips, and the two implementations anyone else
       # also has checked against base64(1) and Python.
       - name: Test

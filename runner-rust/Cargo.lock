@@ -6,6 +6,7 @@ version = 4
 name = "b2t-runner"
 version = "0.1.0"
 dependencies = [
+ "base65t",
  "base85n",
  "base91z",
  "base94max",
@@ -13,6 +14,10 @@ dependencies = [
  "serde_json",
  "zstd",
 ]
+
+[[package]]
+name = "base65t"
+version = "0.2.0"
 
 [[package]]
 name = "base85n"

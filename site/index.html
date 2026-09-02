@@ -352,6 +352,7 @@ const CODEC_NOTE = {
   "base85n": "Base85N 0.5.x, JSON-safe alphabet",
   "base94max": "Base94Max, adaptive 13/14-bit over all printable ASCII",
   "base91z": "Base91z as it ships: it decides per payload whether to compress, at the level the stage names",
+  "base65t": "Base65t 0.2, Base64URL plus a 65th character introducing raw runs; profile U, the parameterless default",
 };
 
 const PROFILE_TEXT = {
@@ -420,9 +421,10 @@ const PLAIN = {
 // somewhere else, and no corpus of ours settles where.
 const CONTAIN = {
   any: { v: 1, short: "anywhere",
-    why: "the same RFC defines a URL- and filename-safe variant, and the plain " +
-         "alphabet needs no escaping in a JSON string, in HTML text or in a " +
-         "cookie value" },
+    why: "nothing a container treats as its own: a URL query, a cookie value, " +
+         "a JSON string, HTML text and a file name all take the alphabet " +
+         "unescaped \u2014 base64 through the URL-safe variant the same RFC " +
+         "defines, an alphabet drawn from RFC 3986's unreserved set directly" },
   json_html: { v: 0.6, short: "json, html",
     why: "an alphabet picked so a JSON string needs no escaping, and HTML text " +
          "carries it as-is; a URL or a cookie value still has to " +
@@ -475,6 +477,7 @@ const TRAITS = {
   "base85n":        { plain: PLAIN.design, contain: CONTAIN.json_html, reach: REACH.single, stable: STABLE.pre1 },
   "base91z":        { plain: PLAIN.chance, contain: CONTAIN.json,      reach: REACH.single, stable: STABLE.pre1 },
   "base94max":      { plain: PLAIN.none,   contain: CONTAIN.escaped,   reach: REACH.single, stable: STABLE.pre1 },
+  "base65t":        { plain: PLAIN.design, contain: CONTAIN.any,       reach: REACH.single, stable: STABLE.pre1 },
 };
 const UNKNOWN_TRAITS = { plain: PLAIN.none, contain: CONTAIN.escaped,
                          reach: REACH.single, stable: STABLE.pre1 };
@@ -532,8 +535,9 @@ const HUE = {
   "base85n": "var(--s4)",
   "base94max": "var(--s5)",
   "base91z": "var(--s6)",
+  "base65t": "var(--s7)",
 };
-const SPARE = ["var(--s7)", "var(--s3)", "var(--s5)", "var(--s2)"];
+const SPARE = ["var(--s3)", "var(--s5)", "var(--s2)", "var(--s4)"];
 
 /** A stage id as a label. The level is read out of the id rather than written
  *  down beside it, because a hand-written label is one that can say -1 over

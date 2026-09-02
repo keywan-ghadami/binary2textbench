@@ -23,6 +23,7 @@ path = "src/main.rs"
 base91z = { path = "../codecs/base91z/rust", features = ["zstd"] }
 base85n = { path = "../codecs/base85n/rust" }
 base94max = { path = "../codecs/base94max/rust" }
+base65t = { path = "../codecs/base65t/rust" }
 
 zstd = "0.13"
 serde = { version = "1", features = ["derive"] }

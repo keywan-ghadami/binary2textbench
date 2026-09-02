@@ -28,7 +28,8 @@ inputs:
     required: false
     default: ""
   codec-name:
-    description: "Which codec codec-path holds: base91z, base85n or base94max."
+    description: >-
+      Which codec codec-path holds: base91z, base85n, base94max or base65t.
     required: false
     default: ""
   base91z-path:
@@ -41,6 +42,10 @@ inputs:
     default: ""
   base94max-path:
     description: "Checkout of base94max, when it is not the codec under test."
+    required: false
+    default: ""
+  base65t-path:
+    description: "Checkout of base65t, when it is not the codec under test."
     required: false
     default: ""
   groups:
@@ -119,11 +124,12 @@ runs:
         B91Z: ${{ inputs.base91z-path }}
         B85N: ${{ inputs.base85n-path }}
         B94M: ${{ inputs.base94max-path }}
+        B65T: ${{ inputs.base65t-path }}
         GROUPS: ${{ inputs.groups }}
         ROUNDS: ${{ inputs.rounds }}
       run: |
         set -euo pipefail
-        ./scripts/ci-link.sh "$CODEC_NAME" "$CODEC_PATH" "$B91Z" "$B85N" "$B94M"
+        ./scripts/ci-link.sh "$CODEC_NAME" "$CODEC_PATH" "$B91Z" "$B85N" "$B94M" "$B65T"
         cd runner-rust
         # results.json is what the page and the report read: sums per codec,
         # stage, group and category. The per-sample rows behind them are asked
@@ -157,11 +163,12 @@ runs:
         B91Z: ${{ inputs.base91z-path }}
         B85N: ${{ inputs.base85n-path }}
         B94M: ${{ inputs.base94max-path }}
+        B65T: ${{ inputs.base65t-path }}
         GROUPS: ${{ inputs.groups }}
         ROUNDS: ${{ inputs.rounds }}
       run: |
         set -uo pipefail
-        if ./scripts/ci-link.sh "$CODEC_NAME" "$BASE_PATH" "$B91Z" "$B85N" "$B94M" &&
+        if ./scripts/ci-link.sh "$CODEC_NAME" "$BASE_PATH" "$B91Z" "$B85N" "$B94M" "$B65T" &&
            ( cd runner-rust &&
              cargo run --release -- --groups "$GROUPS" --rounds "$ROUNDS" \
                  --out "$GITHUB_WORKSPACE/base-results.json" ); then

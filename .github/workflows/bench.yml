@@ -31,6 +31,10 @@ on:
         description: "base94max ref to measure"
         required: false
         default: main
+      base65t_ref:
+        description: "base65t ref to measure"
+        required: false
+        default: main
       groups:
         description: "core,short,synthetic — add silesia for the long run"
         required: false
@@ -59,7 +63,7 @@ concurrency:
 
 jobs:
   bench:
-    name: Six encodings
+    name: Seven encodings
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -89,15 +93,23 @@ jobs:
           ref: ${{ inputs.base94max_ref || 'main' }}
           path: base94max
 
+      - name: Check out base65t
+        uses: actions/checkout@v4
+        with:
+          repository: keywan-ghadami/base65t
+          ref: ${{ inputs.base65t_ref || 'main' }}
+          path: base65t
+
       - name: The benchmark
         uses: ./binary2textbench
         with:
           base91z-path: ${{ github.workspace }}/base91z
           base85n-path: ${{ github.workspace }}/base85n
           base94max-path: ${{ github.workspace }}/base94max
+          base65t-path: ${{ github.workspace }}/base65t
           groups: ${{ inputs.groups || 'core,short,synthetic' }}
           rounds: ${{ inputs.rounds || '7' }}
-          title: Six encodings on one corpus
+          title: Seven encodings on one corpus
 
       - name: Keep the results and the page
         uses: actions/upload-artifact@v4

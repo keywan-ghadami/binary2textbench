@@ -2,7 +2,7 @@
 # Points runner-rust at one particular checkout of one codec, and at whatever
 # the workflow gave for the other two.
 #
-#     ci-link.sh <codec-name> <codec-path> <base91z> <base85n> <base94max>
+#     ci-link.sh <codec-name> <codec-path> <base91z> <base85n> <base94max> <base65t>
 #
 # The codec under test overrides whatever path was given for it, which is what
 # lets the same action measure a pull request's head and then its base branch
@@ -14,16 +14,18 @@ under_test=${2:-}
 b91z=${3:-}
 b85n=${4:-}
 b94m=${5:-}
+b65t=${6:-}
 
 case "$name" in
     base91z)   b91z=$under_test ;;
     base85n)   b85n=$under_test ;;
     base94max) b94m=$under_test ;;
+    base65t)   b65t=$under_test ;;
     "")        ;;
     *)         echo "ci-link.sh: unknown codec '$name'" >&2; exit 2 ;;
 esac
 
-for pair in "base91z:$b91z" "base85n:$b85n" "base94max:$b94m"; do
+for pair in "base91z:$b91z" "base85n:$b85n" "base94max:$b94m" "base65t:$b65t"; do
     codec=${pair%%:*}
     path=${pair#*:}
     if [ -z "$path" ]; then
@@ -34,4 +36,4 @@ for pair in "base91z:$b91z" "base85n:$b85n" "base94max:$b94m"; do
 done
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-exec "$here/scripts/link-codecs.sh" "$b91z" "$b85n" "$b94m"
+exec "$here/scripts/link-codecs.sh" "$b91z" "$b85n" "$b94m" "$b65t"

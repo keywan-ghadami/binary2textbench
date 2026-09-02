@@ -3,10 +3,10 @@
 One corpus, one process, one set of numbers for the binary-to-text encodings
 that keep getting compared to each other by hand.
 
-Six encodings are measured: **Base64** as the baseline, **classic basE91** and
-**Ascii85** as the established alternatives, and **Base91z**, **Base85N** and
-**Base94Max**. They are built from source and run in one process, so what is
-compared is six encodings and not six languages.
+Seven encodings are measured: **Base64** as the baseline, **classic basE91**
+and **Ascii85** as the established alternatives, and **Base91z**, **Base85N**,
+**Base94Max** and **Base65t**. They are built from source and run in one
+process, so what is compared is seven encodings and not seven languages.
 
 ## What is measured
 
@@ -125,7 +125,7 @@ Adding a profile needs no code change.
 ## Running it
 
 ```sh
-scripts/link-codecs.sh                  # or pass three paths explicitly
+scripts/link-codecs.sh                  # or pass four paths explicitly
 python3 corpus/manifest.py --groups=core,short,synthetic
 cd runner-rust && cargo run --release -- --groups core,short,synthetic
 ```
@@ -207,7 +207,7 @@ On Cloudflare Pages instead, the equivalent is an empty build command with
 ## In CI
 
 `action.yml` is a composite action each codec repository calls, so the CI logic
-lives here once instead of in four places. A pull request in any of the codec
+lives here once instead of in five places. A pull request in any of the codec
 repositories is measured against its own base branch and the deltas are written
 to the job summary; the central workflow runs weekly and on demand against any
 combination of refs. Results are artifacts only — the latest state, no history
