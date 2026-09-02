@@ -81,9 +81,7 @@ impl Stage {
     fn undo(&self, data: &[u8], hint: usize) -> Vec<u8> {
         match self {
             Stage::None => data.to_vec(),
-            Stage::Zstd(_) => {
-                zstd::bulk::decompress(data, hint.max(1)).expect("zstd decompress")
-            }
+            Stage::Zstd(_) => zstd::bulk::decompress(data, hint.max(1)).expect("zstd decompress"),
         }
     }
 }
@@ -256,9 +254,13 @@ fn main() {
         .filter(|s| args.groups.is_empty() || args.groups.contains(&s.group))
         .map(|s| {
             let path = root.join(&s.path);
-            let data = std::fs::read(&path)
-                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-            assert_eq!(data.len(), s.bytes, "{} changed size since the manifest", s.name);
+            let data = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert_eq!(
+                data.len(),
+                s.bytes,
+                "{} changed size since the manifest",
+                s.name
+            );
             (s.clone(), data)
         })
         .collect();
@@ -298,7 +300,8 @@ fn main() {
                     .unwrap_or_else(|e| panic!("{} on {}: {e}", codec.name, meta.name));
                 let restored = stage.undo(&decoded, data.len());
                 assert_eq!(
-                    restored, *data,
+                    restored,
+                    *data,
                     "{} + {} did not return {}",
                     codec.name,
                     stage.label(),
@@ -335,7 +338,9 @@ fn main() {
         // the same as every other codec has.
         for stage in STAGES {
             for (ci, codec) in codecs.iter().enumerate() {
-                let Some(native) = &codec.native else { continue };
+                let Some(native) = &codec.native else {
+                    continue;
+                };
                 let level = match stage {
                     Stage::None => None,
                     Stage::Zstd(l) => Some(l),
@@ -345,10 +350,16 @@ fn main() {
                 json::escape_into(&encoded, &mut escaped);
                 let unescaped = json::unescape(&escaped).expect("unescape");
                 let decoded = (native.decode)(&unescaped).unwrap_or_else(|e| {
-                    panic!("{} native at {} on {}: {e}", codec.name, stage.label(), meta.name)
+                    panic!(
+                        "{} native at {} on {}: {e}",
+                        codec.name,
+                        stage.label(),
+                        meta.name
+                    )
                 });
                 assert_eq!(
-                    decoded, *data,
+                    decoded,
+                    *data,
                     "{} native at {} did not return {}",
                     codec.name,
                     stage.label(),
@@ -387,7 +398,10 @@ fn main() {
         .expect("base64 is the baseline and must be present");
     let mut groups: BTreeMap<(usize, String), Vec<usize>> = BTreeMap::new();
     for (i, cell) in cells.iter().enumerate() {
-        groups.entry((cell.sample, cell.stage.label())).or_default().push(i);
+        groups
+            .entry((cell.sample, cell.stage.label()))
+            .or_default()
+            .push(i);
     }
     let mut groups: Vec<Vec<usize>> = groups.into_values().collect();
 
@@ -423,7 +437,12 @@ fn main() {
             measure_group(&mut cells, group, baseline, &codecs, true);
         }
         measure_compression(&mut compression, &sources, &mut stages, true);
-        eprintln!("round {}/{} in {:.1} s", round + 1, args.rounds, t.elapsed().as_secs_f64());
+        eprintln!(
+            "round {}/{} in {:.1} s",
+            round + 1,
+            args.rounds,
+            t.elapsed().as_secs_f64()
+        );
     }
 
     // --- collect --------------------------------------------------------
@@ -595,7 +614,10 @@ fn time_cell(cell: &mut Cell, codecs: &[codecs::Codec]) -> (f64, f64) {
     // clock is a branch on a `bool` that predicts perfectly, against a call
     // that allocates a string.
     let native = cell.native.then(|| {
-        let n = codec.native.as_ref().expect("native cell has a native path");
+        let n = codec
+            .native
+            .as_ref()
+            .expect("native cell has a native path");
         let level = match cell.stage {
             Stage::None => None,
             Stage::Zstd(l) => Some(l),
@@ -685,7 +707,10 @@ fn measure_compression(
         };
         let source = &sources[cell.sample];
         let compressed = &cell.output;
-        let c = stages.compressors.get_mut(&level).expect("a compressor per level");
+        let c = stages
+            .compressors
+            .get_mut(&level)
+            .expect("a compressor per level");
         let into = &mut stages.into;
         let enc = time_once(|| {
             into.clear();
@@ -782,7 +807,10 @@ impl Args {
 /// weightings a number was presented under travel with the number.
 fn read_profiles(path: &Path) -> serde_json::Value {
     let Ok(text) = std::fs::read_to_string(path) else {
-        eprintln!("note: no profiles at {} -- the site will offer none", path.display());
+        eprintln!(
+            "note: no profiles at {} -- the site will offer none",
+            path.display()
+        );
         return serde_json::json!({});
     };
     match toml_lite::parse(&text) {
@@ -889,7 +917,8 @@ mod toml_lite {
                 table_at(&mut root, &path);
                 continue;
             }
-            let (key, value) = line.split_once('=')
+            let (key, value) = line
+                .split_once('=')
                 .ok_or_else(|| format!("{}: expected key = value", at()))?;
             let table = table_at(&mut root, &path);
             table.insert(unquote(key.trim()), scalar(value.trim(), &at)?);
@@ -913,7 +942,10 @@ mod toml_lite {
         s.trim_matches('"').to_string()
     }
 
-    fn table_at<'a>(root: &'a mut Map<String, Value>, path: &[String]) -> &'a mut Map<String, Value> {
+    fn table_at<'a>(
+        root: &'a mut Map<String, Value>,
+        path: &[String],
+    ) -> &'a mut Map<String, Value> {
         let mut cur = root;
         for part in path {
             cur = cur

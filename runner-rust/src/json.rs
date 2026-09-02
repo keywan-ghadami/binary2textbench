@@ -144,7 +144,11 @@ mod tests {
             let mine = format!("\"{}\"", escape(case));
             let theirs = serde_json::to_string(case).unwrap();
             assert_eq!(mine, theirs, "escaping {case:?}");
-            assert_eq!(unescape(&escape(case)).unwrap(), case, "round trip {case:?}");
+            assert_eq!(
+                unescape(&escape(case)).unwrap(),
+                case,
+                "round trip {case:?}"
+            );
         }
     }
 

@@ -81,17 +81,36 @@ const PRUNE_OVERRIDE: bool = true;
 
 const CORPUS_COLS: [&str; 4] = ["grp", "cat", "samples", "bytes"];
 const STAGE_COLS: [&str; 7] = [
-    "stage", "grp", "cat", "coded_in", "comp_out", "comp_ns", "decomp_ns",
+    "stage",
+    "grp",
+    "cat",
+    "coded_in",
+    "comp_out",
+    "comp_ns",
+    "decomp_ns",
 ];
 const TIME_COLS: [&str; 5] = ["codec", "stage", "native", "enc_ns", "dec_ns"];
 /// The seven keys, then the eight ratios in the order [`Dir`] is read out in,
 /// then the two that only a self-compressing codec has. A row that ends in
 /// nulls is written short, so anything optional has to stay at the end.
 const CELL_COLS: [&str; 17] = [
-    "codec", "stage", "grp", "cat", "native", "raw", "esc",
-    "enc_raw", "enc_q", "dec_raw", "dec_q",
-    "enc_tot", "enc_tot_q", "dec_tot", "dec_tot_q",
-    "enc_cod", "dec_cod",
+    "codec",
+    "stage",
+    "grp",
+    "cat",
+    "native",
+    "raw",
+    "esc",
+    "enc_raw",
+    "enc_q",
+    "dec_raw",
+    "dec_q",
+    "enc_tot",
+    "enc_tot_q",
+    "dec_tot",
+    "dec_tot_q",
+    "enc_cod",
+    "dec_cod",
 ];
 
 /// What `--out` gets. Serialised in declaration order, which is the order it is
@@ -176,8 +195,12 @@ pub fn of(r: &Results) -> Compact<'_> {
     let codecs: Vec<&str> = r.codecs.iter().map(|c| c.name.as_str()).collect();
     let ki = index(codecs.iter().copied());
 
-    let samples: BTreeMap<&str, &SampleMeta> =
-        r.corpus.samples.iter().map(|s| (s.name.as_str(), s)).collect();
+    let samples: BTreeMap<&str, &SampleMeta> = r
+        .corpus
+        .samples
+        .iter()
+        .map(|s| (s.name.as_str(), s))
+        .collect();
     let comp: BTreeMap<(&str, &str), &CompressionRow> = r
         .compression
         .iter()
@@ -284,7 +307,11 @@ pub fn of(r: &Results) -> Compact<'_> {
             d.raw += rel.ns * n;
             d.q += rel.iqr_ns * n;
             let cod = if m.native {
-                if oth != 0.0 { own / oth } else { 0.0 }
+                if oth != 0.0 {
+                    own / oth
+                } else {
+                    0.0
+                }
             } else {
                 rel.ns
             };
@@ -309,11 +336,17 @@ pub fn of(r: &Results) -> Compact<'_> {
             e.raw.into(),
             e.esc.into(),
         ];
-        for v in [enc.raw, enc.q, dec.raw, dec.q, enc.tot, enc.tot_q, dec.tot, dec.tot_q] {
+        for v in [
+            enc.raw, enc.q, dec.raw, dec.q, enc.tot, enc.tot_q, dec.tot, dec.tot_q,
+        ] {
             row.push(round(v / n, REL).into());
         }
         for v in [enc.cod, dec.cod] {
-            row.push(if *nat == 1 { round(v / n, REL).into() } else { Value::Null });
+            row.push(if *nat == 1 {
+                round(v / n, REL).into()
+            } else {
+                Value::Null
+            });
         }
         while row.last() == Some(&Value::Null) {
             row.pop();
@@ -423,7 +456,11 @@ mod tests {
     use serde_json::json;
 
     fn s(ns: f64, iqr_ns: f64) -> Summary {
-        Summary { ns, iqr_ns, rounds: 1 }
+        Summary {
+            ns,
+            iqr_ns,
+            rounds: 1,
+        }
     }
 
     fn sample(name: &str, bytes: usize) -> SampleMeta {
@@ -475,20 +512,38 @@ mod tests {
         let mut measurements = Vec::new();
         for (name, bytes, encoded) in [("a", 100usize, 10usize), ("b", 300, 30)] {
             measurements.push(row(
-                name, "base64", false, bytes, encoded, encoded / 10,
-                (100.0, 1.0, 0.03), (400.0, 1.0, 0.04),
+                name,
+                "base64",
+                false,
+                bytes,
+                encoded,
+                encoded / 10,
+                (100.0, 1.0, 0.03),
+                (400.0, 1.0, 0.04),
             ));
             // As it ships: the row the report shows.
             measurements.push(row(
-                name, "fancy", true, bytes, encoded / 2, 0,
-                (50.0, 0.4, 0.1), (100.0, 0.2, 0.2),
+                name,
+                "fancy",
+                true,
+                bytes,
+                encoded / 2,
+                0,
+                (50.0, 0.4, 0.1),
+                (100.0, 0.2, 0.2),
             ));
             // The same codec with its own compression forced off. Nothing
             // reads it, so nothing here may contain it -- and it is absurd on
             // purpose, so that leaking it would be unmissable.
             measurements.push(row(
-                name, "fancy", false, bytes, 9999, 0,
-                (9999.0, 99.0, 99.0), (9999.0, 99.0, 99.0),
+                name,
+                "fancy",
+                false,
+                bytes,
+                9999,
+                0,
+                (9999.0, 99.0, 99.0),
+                (9999.0, 99.0, 99.0),
             ));
         }
         Results {
@@ -505,8 +560,14 @@ mod tests {
                 samples: vec![sample("a", 100), sample("b", 300)],
             },
             codecs: vec![
-                CodecMeta { name: "base64".into(), note: "words".into() },
-                CodecMeta { name: "fancy".into(), note: "words".into() },
+                CodecMeta {
+                    name: "base64".into(),
+                    note: "words".into(),
+                },
+                CodecMeta {
+                    name: "fancy".into(),
+                    note: "words".into(),
+                },
             ],
             stages: vec!["zstd:1".into()],
             profiles: json!({"profile": {"p": {
@@ -539,7 +600,10 @@ mod tests {
 
         assert_eq!(out["v"], json!(FORMAT));
         assert_eq!(out["corpus"], json!([[0, 0, 2, 400]]));
-        assert_eq!(out["stage_sizes"], json!([[0, 0, 0, 400, 200, 400.0, 200.0]]));
+        assert_eq!(
+            out["stage_sizes"],
+            json!([[0, 0, 0, 400, 200, 400.0, 200.0]])
+        );
         // Two rows, not three: the override cells are not written, so the
         // absurd numbers above are nowhere in the file.
         assert_eq!(

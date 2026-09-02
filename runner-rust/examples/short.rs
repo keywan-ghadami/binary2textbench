@@ -46,7 +46,9 @@ fn main() {
         let e0 = bench(d.len(), reps, || codecs::base64_encode(d));
         let e1 = bench(d.len(), reps, || base65t::encode(d));
         let x0 = bench(d.len(), reps, || codecs::base64_decode(&b64).unwrap());
-        let x1 = bench(d.len(), reps, || base65t::decode(&dense, Profile::U).unwrap());
+        let x1 = bench(d.len(), reps, || {
+            base65t::decode(&dense, Profile::U).unwrap()
+        });
         let mb = d.len() as f64 / (1 << 20) as f64;
         te0 += mb / e0;
         te1 += mb / e1;

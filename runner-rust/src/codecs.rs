@@ -218,14 +218,19 @@ fn b64_table() -> &'static [i8; 256] {
 fn b64_value(table: &[i8; 256], c: u8) -> Result<u32, CodecError> {
     let v = table[c as usize];
     if v < 0 {
-        return Err(CodecError(format!("base64: invalid character {:?}", c as char)));
+        return Err(CodecError(format!(
+            "base64: invalid character {:?}",
+            c as char
+        )));
     }
     Ok(v as u32)
 }
 
 pub fn base64_decode(s: &str) -> Result<Vec<u8>, CodecError> {
     let b = s.as_bytes();
-    let body = b.strip_suffix(b"==").map(|x| (x, 1))
+    let body = b
+        .strip_suffix(b"==")
+        .map(|x| (x, 1))
         .or_else(|| b.strip_suffix(b"=").map(|x| (x, 2)))
         .unwrap_or((b, 3));
     let (body, tail) = body;
@@ -311,7 +316,10 @@ pub fn base91_classic_decode(s: &str) -> Result<Vec<u8>, CodecError> {
     for &c in s.as_bytes() {
         let d = table[c as usize];
         if d < 0 {
-            return Err(CodecError(format!("basE91: invalid character {:?}", c as char)));
+            return Err(CodecError(format!(
+                "basE91: invalid character {:?}",
+                c as char
+            )));
         }
         if v < 0 {
             v = d as i32;
@@ -376,7 +384,10 @@ pub fn ascii85_decode(s: &str) -> Result<Vec<u8>, CodecError> {
             continue;
         }
         if !(b'!'..=b'u').contains(&c) {
-            return Err(CodecError(format!("ascii85: invalid character {:?}", c as char)));
+            return Err(CodecError(format!(
+                "ascii85: invalid character {:?}",
+                c as char
+            )));
         }
         group[have] = c - b'!';
         have += 1;
@@ -387,7 +398,9 @@ pub fn ascii85_decode(s: &str) -> Result<Vec<u8>, CodecError> {
     }
     if have > 0 {
         if have == 1 {
-            return Err(CodecError("ascii85: orphan character in final group".into()));
+            return Err(CodecError(
+                "ascii85: orphan character in final group".into(),
+            ));
         }
         // A partial group is padded with the highest digit, then truncated.
         let mut padded = [84u8; 5];
@@ -404,7 +417,9 @@ fn decode_group(g: &[u8; 5], filled: usize) -> Result<u32, CodecError> {
         n = n * 85 + d as u64;
     }
     if n > u32::MAX as u64 {
-        return Err(CodecError(format!("ascii85: group of {filled} overflows 32 bits")));
+        return Err(CodecError(format!(
+            "ascii85: group of {filled} overflows 32 bits"
+        )));
     }
     Ok(n as u32)
 }

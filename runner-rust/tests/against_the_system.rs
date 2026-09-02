@@ -38,7 +38,12 @@ fn pipe(cmd: &str, args: &[&str], input: &[u8]) -> String {
         .stdout(Stdio::piped())
         .spawn()
         .expect("spawn");
-    child.stdin.take().expect("stdin").write_all(input).expect("write");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(input)
+        .expect("write");
     let out = child.wait_with_output().expect("wait");
     assert!(out.status.success(), "{cmd} exited unsuccessfully");
     String::from_utf8(out.stdout).expect("output is utf-8")

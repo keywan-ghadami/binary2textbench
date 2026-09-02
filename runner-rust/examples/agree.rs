@@ -25,7 +25,10 @@ fn main() {
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{path}: {e} -- run corpus/manifest.py first"));
     let manifest: serde_json::Value = serde_json::from_str(&text).expect("manifest is JSON");
-    let root = PathBuf::from(&path).parent().expect("manifest has a directory").to_path_buf();
+    let root = PathBuf::from(&path)
+        .parent()
+        .expect("manifest has a directory")
+        .to_path_buf();
 
     let level = base91z::DEFAULT_LEVEL;
     let (mut differ, mut worse, mut total, mut worst) = (0usize, 0usize, 0usize, 0i64);
@@ -43,8 +46,11 @@ fn main() {
                 worse += 1;
                 worst = worst.max(delta);
             }
-            println!("{name}: encode_at {} vs encode_auto {} ({delta:+})",
-                     cheap.len(), reference.len());
+            println!(
+                "{name}: encode_at {} vs encode_auto {} ({delta:+})",
+                cheap.len(),
+                reference.len()
+            );
         }
         // Whatever it chose has to come back.
         assert_eq!(base91z::decode(&cheap).expect("decode"), data, "{name}");
