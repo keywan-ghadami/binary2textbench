@@ -48,6 +48,19 @@ jobs:
         with:
           repository: keywan-ghadami/base65t
           path: base65t
+      # A branch here that changes what the runner asks of base65t is paired
+      # with a branch of the same name there. Take it where it exists, and
+      # the default branch otherwise -- which revision gets measured is a
+      # property of the run, not of this file.
+      - name: Take the same-named base65t branch, if there is one
+        working-directory: base65t
+        run: |
+          if git fetch --depth 1 origin "${{ github.ref_name }}" 2>/dev/null; then
+            git checkout --detach FETCH_HEAD
+            echo "base65t at $(git rev-parse --short HEAD) (${{ github.ref_name }})"
+          else
+            echo "base65t at $(git rev-parse --short HEAD) (default branch)"
+          fi
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
