@@ -12,7 +12,6 @@
 //! earn. The timing columns are against the runner's base64, which is the
 //! denominator of every published figure; two `=` cost it nothing measurable.
 use b2t_runner::codecs;
-use base65t::Profile;
 use std::time::Instant;
 
 fn bench<T>(n: usize, reps: usize, mut f: impl FnMut() -> T) -> f64 {
@@ -54,7 +53,7 @@ fn main() {
         let e1 = bench(d.len(), reps, || base65t::encode(d));
         let x0 = bench(d.len(), reps, || codecs::base64_decode(&b64).unwrap());
         let x1 = bench(d.len(), reps, || {
-            base65t::decode(&dense, Profile::U).unwrap()
+            base65t::decode(&dense).unwrap()
         });
         let mb = d.len() as f64 / (1 << 20) as f64;
         te0 += mb / e0;

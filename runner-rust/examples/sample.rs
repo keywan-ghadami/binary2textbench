@@ -1,10 +1,10 @@
 //! What a sample of the real decision costs, against always deciding.
 //!
-//! The encoder asks one question of every block: does the profile admit all
+//! The encoder asks one question of every block: does the alphabet admit all
 //! forty-eight bytes? Where the answer is always no -- compressed data,
-//! binary, and also English prose in profile U, whose spaces put a rejected
-//! byte in every block -- that question is pure overhead, and it is the whole
-//! of what base65t costs over base64 when encoding.
+//! binary, and also English prose, whose spaces put a rejected byte in every
+//! block -- that question is pure overhead, and it is the whole of what
+//! base65t costs over base64 when encoding.
 //!
 //! A sample answers it in advance: run the same check over the first `k`
 //! blocks. If none of them is raw, write the whole stream as base64url and
@@ -16,21 +16,21 @@
 //!
 //!     cargo run --release --example sample -- corpus/data/**/*
 
-use base65t::{choose, encode_with, Form, Profile, BLOCK_BYTES};
+use base65t::{admits_all, choose, encode, Form, BLOCK_BYTES};
 
 /// Bytes the encoder writes when it checks every block.
-fn size_checked(data: &[u8], p: Profile) -> usize {
-    encode_with(data, p).len()
+fn size_checked(data: &[u8]) -> usize {
+    encode(data).len()
 }
 
 /// Bytes it writes when the first `k` blocks decide for the whole file.
-fn size_sampled(data: &[u8], p: Profile, k: usize) -> (usize, bool) {
+fn size_sampled(data: &[u8], k: usize) -> (usize, bool) {
     let any_raw = data
         .chunks(BLOCK_BYTES)
         .take(k)
-        .any(|b| choose(b.len(), p.admits_all(b)).0 == Form::Raw);
+        .any(|b| choose(b.len(), admits_all(b)).0 == Form::Raw);
     if any_raw {
-        (size_checked(data, p), true)
+        (size_checked(data), true)
     } else {
         ((4 * data.len()).div_ceil(3), false)
     }
@@ -46,8 +46,8 @@ fn main() {
             }
         }
     }
-    for p in [Profile::U, Profile::T] {
-        println!("\n## profile {p:?}\n");
+    {
+        println!("\n## profile base65t\n");
         println!(
             "| file | bytes | checked | {} |",
             ks.iter()
@@ -63,12 +63,12 @@ fn main() {
         let mut lost = vec![0usize; ks.len()];
         for (name, d) in &files {
             let b64 = (4 * d.len()).div_ceil(3);
-            let checked = size_checked(d, p);
+            let checked = size_checked(d);
             tot_b64 += b64;
             tot_checked += checked;
             let mut cells = Vec::new();
             for (i, &k) in ks.iter().enumerate() {
-                let (s, asked) = size_sampled(d, p, k);
+                let (s, asked) = size_sampled(d, k);
                 tot[i] += s;
                 if !asked {
                     skipped[i] += 1;

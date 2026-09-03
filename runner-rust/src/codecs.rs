@@ -116,7 +116,7 @@ pub fn all() -> Vec<Codec> {
             // unescaped, which is the claim the format leads with.
             encode: |d| String::from_utf8(base65t::encode(d)).expect("profile U is ASCII"),
             decode: |s| {
-                base65t::decode(s.as_bytes(), base65t::Profile::U)
+                base65t::decode(s.as_bytes())
                     .map(|d| d.bytes)
                     .map_err(|e| CodecError(e.to_string()))
             },

@@ -12,7 +12,6 @@
 //! the base64 is the runner's own, which is the denominator of every published
 //! figure.
 use b2t_runner::codecs;
-use base65t::Profile;
 use std::time::Instant;
 
 fn bench<T>(bytes: usize, mut f: impl FnMut() -> T) -> f64 {
@@ -33,11 +32,7 @@ fn bench<T>(bytes: usize, mut f: impl FnMut() -> T) -> f64 {
 }
 
 fn main() {
-    let profile = match std::env::var("PROFILE").as_deref() {
-        Ok("T") => Profile::T,
-        _ => Profile::U,
-    };
-    println!("profile {profile:?} — MiB/s, and base65t as a share of base64's time");
+    println!("MiB/s, and base65t as a share of base64's time");
     println!("| file | size | b64 enc | b65t enc | enc | b64 dec | b65t dec | dec |");
     println!("|---|--:|--:|--:|--:|--:|--:|--:|");
     for path in std::env::args().skip(1) {
@@ -46,11 +41,11 @@ fn main() {
             continue;
         }
         let b64 = codecs::base64_encode(&d);
-        let ours = base65t::encode_with(&d, profile);
+        let ours = base65t::encode(&d);
         let e0 = bench(d.len(), || codecs::base64_encode(&d));
-        let e1 = bench(d.len(), || base65t::encode_with(&d, profile));
+        let e1 = bench(d.len(), || base65t::encode(&d));
         let x0 = bench(d.len(), || codecs::base64_decode(&b64).unwrap());
-        let x1 = bench(d.len(), || base65t::decode(&ours, profile).unwrap());
+        let x1 = bench(d.len(), || base65t::decode(&ours).unwrap());
         println!(
             "| `{}` | {:.1} % | {e0:.0} | {e1:.0} | **{:.0} %** | {x0:.0} | {x1:.0} | **{:.0} %** |",
             path.rsplit('/').next().unwrap(),
