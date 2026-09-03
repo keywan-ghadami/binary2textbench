@@ -25,7 +25,9 @@ fn main() {
     println!("| file | bytes | size | in the clear |");
     println!("|---|--:|--:|--:|");
     for path in std::env::args().skip(1) {
-        let Ok(d) = std::fs::read(&path) else { continue };
+        let Ok(d) = std::fs::read(&path) else {
+            continue;
+        };
         if d.is_empty() {
             continue;
         }

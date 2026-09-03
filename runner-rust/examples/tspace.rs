@@ -19,8 +19,8 @@ fn admits(b: u8, space: bool) -> bool {
 /// The encoder of §9.0 and §9.6, size and cleartext bytes only.
 fn measure(d: &[u8], space: bool) -> (usize, usize) {
     let raw_ok = |blk: &[u8]| blk.len() >= 4 && blk.iter().all(|&b| admits(b, space));
-    let sampled = d.len() > SAMPLE_BLOCKS * BLOCK
-        && !d.chunks(BLOCK).take(SAMPLE_BLOCKS).any(raw_ok);
+    let sampled =
+        d.len() > SAMPLE_BLOCKS * BLOCK && !d.chunks(BLOCK).take(SAMPLE_BLOCKS).any(raw_ok);
     if sampled {
         return ((4 * d.len()).div_ceil(3), 0);
     }
@@ -41,7 +41,9 @@ fn main() {
     let (mut cw, mut cwo, mut bytes) = (0usize, 0usize, 0usize);
     let mut rows = Vec::new();
     for path in std::env::args().skip(1) {
-        let Ok(d) = std::fs::read(&path) else { continue };
+        let Ok(d) = std::fs::read(&path) else {
+            continue;
+        };
         if d.is_empty() {
             continue;
         }
