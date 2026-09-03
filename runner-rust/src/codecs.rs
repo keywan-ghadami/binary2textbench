@@ -110,16 +110,11 @@ pub fn all() -> Vec<Codec> {
             // readability or for random access, and measuring one of those
             // would be measuring a configuration a caller has to ask for.
             //
-            // Profile U rather than T although the container here is a JSON
-            // string and T would pass more text through: U is the default, and
-            // it is the one that also goes into a URL and a cookie value
-            // unescaped, which is the claim the format leads with.
-            encode: |d| String::from_utf8(base65t::encode(d)).expect("profile U is ASCII"),
-            decode: |s| {
-                base65t::decode(s.as_bytes())
-                    .map(|d| d.bytes)
-                    .map_err(|e| CodecError(e.to_string()))
-            },
+            // There is one alphabet and no parameter: `encode` returns a
+            // String because the output is always printable ASCII, which is
+            // also why nothing here has to escape it.
+            encode: |d| base65t::encode(d),
+            decode: |s| base65t::decode(s).map_err(|e| CodecError(e.to_string())),
             native: None,
         },
         Codec {
