@@ -1,4 +1,4 @@
-//! Large inputs, where the head decision of §9.6 is what is being measured.
+//! Large inputs: what the block encoder costs against base64 at memory-bandwidth sizes.
 //!
 //! The companion is `short.rs`, which measures the values the format is
 //! actually for. These two disagree, and the disagreement is the point: at
@@ -38,8 +38,8 @@ fn main() {
         _ => Profile::U,
     };
     println!("profile {profile:?} — MiB/s, and base65t as a share of base64's time");
-    println!("| file | mode | size | b64 enc | b65t enc | enc | b64 dec | b65t dec | dec |");
-    println!("|---|--:|--:|--:|--:|--:|--:|--:|--:|");
+    println!("| file | size | b64 enc | b65t enc | enc | b64 dec | b65t dec | dec |");
+    println!("|---|--:|--:|--:|--:|--:|--:|--:|");
     for path in std::env::args().skip(1) {
         let d = std::fs::read(&path).unwrap();
         if d.len() < 1 << 20 {
@@ -52,9 +52,8 @@ fn main() {
         let x0 = bench(d.len(), || codecs::base64_decode(&b64).unwrap());
         let x1 = bench(d.len(), || base65t::decode(&ours, profile).unwrap());
         println!(
-            "| `{}` | {:?} | {:.1} % | {e0:.0} | {e1:.0} | **{:.0} %** | {x0:.0} | {x1:.0} | **{:.0} %** |",
+            "| `{}` | {:.1} % | {e0:.0} | {e1:.0} | **{:.0} %** | {x0:.0} | {x1:.0} | **{:.0} %** |",
             path.rsplit('/').next().unwrap(),
-            base65t::classify(&d),
             100.0 * ours.len() as f64 / b64.len() as f64,
             100.0 * e0 / e1,
             100.0 * x0 / x1
