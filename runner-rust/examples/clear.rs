@@ -1,11 +1,11 @@
 //! How much of the input stays readable, and what the profile decides.
 //!
-//! Size is not the only thing the encoding is worth. A raw block and the
-//! clear part of a mask block stand in the output as they stood in the
-//! input, so a document that is mostly text with punctuation in it -- XML,
-//! JSON, a stylesheet -- can be read in the encoded stream. Which bytes
-//! qualify is the profile's question, and it moves the answer more than any
-//! encoder rule ever did.
+//! Size is not the only thing the encoding is worth. A raw block stands in
+//! the output as it stood in the input, so a document whose text runs in
+//! stretches of forty-eight bytes can be read in the encoded stream. Which
+//! bytes qualify is the profile's question, and one byte the profile rejects
+//! costs its whole block -- which is why the answer swings so far between U
+//! and T on the same file.
 //!
 //!     cargo run --release --example clear -- corpus/data/*.*
 use base65t::*;
@@ -20,7 +20,6 @@ fn passthrough(data: &[u8], profile: Profile) -> f64 {
         clear += match choose(block.len(), mask).0 {
             Form::Base64 => 0,
             Form::Raw => block.len(),
-            Form::Mask => mask.count_ones() as usize,
         };
     }
     100.0 * clear as f64 / data.len().max(1) as f64
